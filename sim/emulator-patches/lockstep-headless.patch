@@ -7,7 +7,7 @@ index 1061b46..1ba64dd 100644
  SDL_Event e;
  bool running = true;
 +
-+//--- gametank_fpga lockstep patch: headless per-frame framebuffer dumps ---
++//--- GameTank_MiSTer lockstep patch: headless per-frame framebuffer dumps ---
 +static FILE* lockstep_file = NULL;
 +static long  lockstep_frames = 0;
 +static long  lockstep_count = 0;
@@ -46,7 +46,7 @@ index 1061b46..1ba64dd 100644
  bool lshift = false;
  bool rshift = false;
  
-+//--- gametank_fpga lockstep patch: deterministic power-on ---
++//--- GameTank_MiSTer lockstep patch: deterministic power-on ---
 +static bool zero_poweron() { return getenv("GTE_ZERO_POWERON") != NULL; }
 +//-------------------------------------------------------------
  void randomize_vram() {
@@ -80,7 +80,7 @@ index 1061b46..1ba64dd 100644
  					profiler.last_blitter_activity = blitter->pixels_this_frame;
  					blitter->pixels_this_frame = 0;
  				}
-+				//--- gametank_fpga lockstep patch: dump displayed page ---
++				//--- GameTank_MiSTer lockstep patch: dump displayed page ---
 +				while(lockstep_input_pos < lockstep_inputs.size() &&
 +				      lockstep_inputs[lockstep_input_pos].flip <= lockstep_count) {
 +					joysticks->injectPads(
@@ -126,7 +126,7 @@ index 4766264..c210a4a 100644
  	SDL_GameController* gGameController = NULL;
  	SDL_JoystickID gGameControllerId = 0;
  public:
-+	//--- gametank_fpga lockstep patch: scripted input injection ---
++	//--- GameTank_MiSTer lockstep patch: scripted input injection ---
 +	void injectPads(uint16_t p1, uint16_t p2) { pad1Mask = p1; pad2Mask = p2; }
 +	//---------------------------------------------------------------
  	JoystickAdapter();
