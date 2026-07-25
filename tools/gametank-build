@@ -41,7 +41,7 @@ done
 
 # === Sanity: must be in repo root ===
 if [[ ! -f "${QPF_FILE}" ]]; then
-    echo "ERROR: ${QPF_FILE} not found. Run from the gametank_fpga repo root." >&2
+    echo "ERROR: ${QPF_FILE} not found. Run from the GameTank_MiSTer repo root." >&2
     exit 1
 fi
 
