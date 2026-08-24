@@ -12,6 +12,7 @@
 
 #include <verilated.h>
 #include "Vgram_ddr.h"
+#include "vl_compat.h"
 
 #define CHECK(cond, ...)                                                  \
     do {                                                                  \
