@@ -65,7 +65,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window sdram cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window sdram tmds_encoder linedouble cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
 INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch frontbuffer_ownership via_shadow
 SYSTEM_TESTS      := game_smoke
 
@@ -111,6 +111,21 @@ $(OUT)/unit_%: unit/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/unit_$*
 	$(VERILATOR) $(VFLAGS) --Mdir obj_dir/unit_$* -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(RTL_SRCS) $(abspath $<)
+
+# The Tang video blocks verilate on their own tops, like the blitter does.
+$(OUT)/unit_linedouble: unit/test_linedouble.cpp common/vl_compat.h \
+                        $(TANG_DIR)/linedouble.sv | $(OUT)
+	@mkdir -p obj_dir/unit_linedouble
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 \
+		--top-module linedouble --Mdir obj_dir/unit_linedouble \
+		-CFLAGS "$(CFLAGS)" -o $(abspath $@) $(TANG_DIR)/linedouble.sv $(abspath $<)
+
+$(OUT)/unit_tmds_encoder: unit/test_tmds_encoder.cpp common/vl_compat.h \
+                          $(TANG_DIR)/tmds_encoder.sv | $(OUT)
+	@mkdir -p obj_dir/unit_tmds_encoder
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 \
+		--top-module tmds_encoder --Mdir obj_dir/unit_tmds_encoder \
+		-CFLAGS "$(CFLAGS)" -o $(abspath $@) $(TANG_DIR)/tmds_encoder.sv $(abspath $<)
 
 # The SDRAM controller is a Tang-port block with its own top and its own
 # harness (a behavioural chip on the pins), so it gets an explicit rule.

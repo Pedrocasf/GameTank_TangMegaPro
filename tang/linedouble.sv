@@ -49,8 +49,8 @@ module linedouble
     output logic [7:0]  b_out
 );
 
-localparam int DOTS = 908;           // dots per line, both sides
-localparam int W    = 26;            // {hsync, hblank, r, g, b}
+localparam logic [9:0] DOTS = 10'd908;   // dots per line, both sides
+localparam int W = 26;                   // {hsync, hblank, r, g, b}
 
 logic [W-1:0] linebuf [0:2047] /*verilator public_flat_rd*/;
 
@@ -88,10 +88,10 @@ always_ff @(posedge clk) begin
         if (anchor)
             in_x <= ce_pix ? 10'd1 : 10'd0;
         else if (ce_pix)
-            in_x <= (in_x == DOTS - 1) ? '0 : in_x + 1'd1;
+            in_x <= (in_x == DOTS - 10'd1) ? '0 : in_x + 10'd1;
 
         // ---- output side: one dot per clk --------------------------------
-        out_x <= (anchor || out_x == DOTS - 1) ? '0 : out_x + 1'd1;
+        out_x <= (anchor || out_x == DOTS - 10'd1) ? '0 : out_x + 10'd1;
 
         // ---- line boundary ------------------------------------------------
         if (anchor) begin

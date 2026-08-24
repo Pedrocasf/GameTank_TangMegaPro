@@ -9,7 +9,9 @@
 
 create_clock -name clk -period 20 -waveform {0 10} [get_ports {clk}] -add
 
-create_generated_clock -name clk_sys -source [get_ports {clk}] -master_clock clk     -divide_by 96 -multiply_by 55 [get_pins {pll/pll_inst/CLKOUT1}]
+// clk_sys is the serial clock divided by five in a CLKDIV, not a PLL output:
+// see the header of tang/pll_tang.v for why that matters to the serializers.
+create_generated_clock -name clk_sys -source [get_pins {pll/pll_inst/CLKOUT0}] -master_clock clk_serial -divide_by 5 [get_pins {pll/pix_div/CLKOUT}]
 
 create_generated_clock -name clk_serial -source [get_ports {clk}] -master_clock clk     -divide_by 96 -multiply_by 275 [get_pins {pll/pll_inst/CLKOUT0}]
 

@@ -29,9 +29,16 @@ wire use_xnor = (n1d > 4'd4) || (n1d == 4'd4 && din[0] == 1'b0);
 
 logic [8:0] qm;
 always_comb begin
-    qm[0] = din[0];
-    for (int i = 1; i < 8; i++)
-        qm[i] = use_xnor ? ~(qm[i-1] ^ din[i]) : (qm[i-1] ^ din[i]);
+    // Carry the chain in an explicit variable rather than reading qm[i-1]
+    // back out of the vector being built: same logic, but it never reads a
+    // signal assigned later in the block (Verilator ALWCOMBORDER).
+    logic prev;
+    prev  = din[0];
+    qm[0] = prev;
+    for (int i = 1; i < 8; i++) begin
+        prev  = use_xnor ? ~(prev ^ din[i]) : (prev ^ din[i]);
+        qm[i] = prev;
+    end
     qm[8] = ~use_xnor;
 end
 

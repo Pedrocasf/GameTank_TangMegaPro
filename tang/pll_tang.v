@@ -8,7 +8,7 @@
 //    Fpfd = FCLKIN / IDIV            = 50 / 2          = 25 MHz
 //    Fvco = Fpfd * FBDIV * MDIV      = 25 * 1 * 34.375 = 859.375 MHz
 //    CLKOUT0 = Fvco / ODIV0(6)       = 143.229167 MHz  (TMDS serial, 5x)
-//    CLKOUT1 = Fvco / ODIV1(30)      =  28.645833 MHz  (clk_sys / pixel)
+//    clk_sys = clk_serial / 5 (CLKDIV) =  28.645833 MHz  (console/pixel)
 //    CLKOUT2 = Fvco / ODIV2(10)      =  85.937500 MHz  (SDRAM, exactly 3x
 //                                                       clk_sys — see
 //                                                       tang/sdram.sv)
@@ -27,6 +27,13 @@
 //
 //  Fvco sits inside the 138K part's 650-1300 MHz window (UG306 §2.3).
 //
+//  The pixel clock is NOT a second PLL output. OSER10 needs its PCLK and
+//  FCLK in a defined phase relationship, and two PLL output dividers can come
+//  out of lock at any of the five possible alignments — the serializer then
+//  latches its parallel word on the wrong boundary and emits a stream no
+//  display can lock to. Dividing the serial clock with CLKDIV, which is what
+//  Gowin's own DVI IP does, makes the relationship structural.
+//
 //  This is a hand-written primitive instantiation rather than IP-generator
 //  output so the divider arithmetic above stays reviewable in-tree; the
 //  parameter set follows Gowin's generated template.
@@ -41,7 +48,7 @@ module pll_tang
     output wire lock
 );
 
-wire clkout3, clkout4, clkout5, clkout6, clkfbout;
+wire clkout1, clkout3, clkout4, clkout5, clkout6, clkfbout;
 wire gnd = 1'b0;
 wire vcc = 1'b1;
 
@@ -49,7 +56,7 @@ PLL pll_inst
 (
     .LOCK      (lock),
     .CLKOUT0   (clk_serial),
-    .CLKOUT1   (clk_sys),
+    .CLKOUT1   (clkout1),
     .CLKOUT2   (clk_sdram),
     .CLKOUT3   (clkout3),
     .CLKOUT4   (clkout4),
@@ -111,7 +118,7 @@ defparam pll_inst.ODIV4_SEL = 8;
 defparam pll_inst.ODIV5_SEL = 8;
 defparam pll_inst.ODIV6_SEL = 8;
 defparam pll_inst.CLKOUT0_EN = "TRUE";
-defparam pll_inst.CLKOUT1_EN = "TRUE";
+defparam pll_inst.CLKOUT1_EN = "FALSE";
 defparam pll_inst.CLKOUT2_EN = "TRUE";
 defparam pll_inst.CLKOUT3_EN = "FALSE";
 defparam pll_inst.CLKOUT4_EN = "FALSE";
@@ -143,5 +150,17 @@ defparam pll_inst.CLK5_IN_SEL = 1'b0;
 defparam pll_inst.CLK5_OUT_SEL = 1'b0;
 defparam pll_inst.CLK6_IN_SEL = 1'b0;
 defparam pll_inst.CLK6_OUT_SEL = 1'b0;
+
+
+// Pixel clock: the serial clock divided by five, so the OSER10 pair in
+// tang/dvi_tx.sv is aligned by construction rather than by luck.
+CLKDIV pix_div
+(
+    .CLKOUT (clk_sys),
+    .HCLKIN (clk_serial),
+    .RESETN (lock),
+    .CALIB  (1'b0)
+);
+defparam pix_div.DIV_MODE = "5";
 
 endmodule
