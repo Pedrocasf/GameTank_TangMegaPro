@@ -7,6 +7,39 @@
 
 VERILATOR ?= verilator
 
+# ---------------------------------------------------------------------------
+# Host platform. Windows (Git Bash + mingw g++) differs in ways that reach
+# this Makefile:
+#   - executables carry .exe, the emulator the lockstep tests run included;
+#   - SDL2 normally arrives as scoop's MSVC build, whose SDL2main.lib cannot
+#     be linked by mingw (duplicate `main`), so the emulator is built with
+#     SDL_MAIN_HANDLED, without -lSDL2main, and with the companion patch
+#     emulator-patches/windows-sdl-main.patch;
+#   - that SDL2.dll has to be on PATH while the emulator runs.
+# Set SDL_ROOT if SDL2 lives somewhere other than scoop's default.
+# ---------------------------------------------------------------------------
+ifeq ($(OS),Windows_NT)
+EXE           := .exe
+SDL_ROOT      ?= $(subst \,/,$(USERPROFILE))/scoop/apps/sdl2/current
+EMU_INCLUDES  := -Isrc/imgui -Isrc/imgui/backends -Isrc/imgui/ext/implot \
+                 -Isrc/whereami -DSDL_MAIN_HANDLED
+EMU_LDFLAGS   := -lmingw32 -lSDL2 -Wl,-Bstatic -mwindows -lm -ldinput8 \
+                 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lcomdlg32 \
+                 -lole32 -loleaut32 -lshell32 -lversion -luuid -static-libgcc \
+                 -lsetupapi
+EMU_MAKE_VARS := SDL_ROOT="$(SDL_ROOT)" EXTRA_INCLUDES="$(EMU_INCLUDES)" \
+                 LINKER_FLAGS="$(EMU_LDFLAGS)"
+EMU_PATCHES   := lockstep-headless.patch windows-sdl-main.patch
+EMU_RUN_ENV   := PATH="$(SDL_ROOT)/lib:$$PATH"
+else
+EXE           :=
+EMU_MAKE_VARS :=
+EMU_PATCHES   := lockstep-headless.patch
+EMU_RUN_ENV   :=
+endif
+
+EMU_BIN := GameTankEmulator/build/GameTankEmulator$(EXE)
+
 RTL_DIR := $(abspath ../rtl)
 TANG_DIR:= $(abspath ../tang)
 COMMON  := $(abspath common)
@@ -202,18 +235,18 @@ GameTankEmulator/.stamp:
 	git clone -q $(EMU_URL) GameTankEmulator
 	cd GameTankEmulator && git checkout -q $(EMU_COMMIT) && \
 	  git submodule update --init --depth 1 src/mos6502 src/imgui/ext/implot && \
-	  git apply $(abspath emulator-patches/lockstep-headless.patch)
+	  $(foreach p,$(EMU_PATCHES),git apply $(abspath emulator-patches/$(p)) &&) true
 	touch $@
 
-GameTankEmulator/build/GameTankEmulator: GameTankEmulator/.stamp
-	+$(MAKE) -C GameTankEmulator build/GameTankEmulator
+$(EMU_BIN): GameTankEmulator/.stamp
+	+$(MAKE) -C GameTankEmulator build/GameTankEmulator$(EXE) $(EMU_MAKE_VARS)
 
 LOCKSTEP_FRAMES ?= 12
 
-$(OUT)/%.emu_frames.bin: testroms/%.gtr GameTankEmulator/build/GameTankEmulator | $(OUT)
-	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+$(OUT)/%.emu_frames.bin: testroms/%.gtr $(EMU_BIN) | $(OUT)
+	$(EMU_RUN_ENV) SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 	GTE_LOCKSTEP_OUT=$(abspath $@) GTE_LOCKSTEP_FRAMES=$(LOCKSTEP_FRAMES) \
-	  ./GameTankEmulator/build/GameTankEmulator --softrender --nosound --nojoystick \
+	  ./$(EMU_BIN) --softrender --nosound --nojoystick \
 	  $(abspath $<) >/dev/null 2>&1
 
 run-integration-lockstep_fb_pattern: $(OUT)/integration_lockstep_fb_pattern \

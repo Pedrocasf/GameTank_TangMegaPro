@@ -1,5 +1,22 @@
 `verilator_config
+
+// Path patterns use `?` for the separator rather than `/`: Verilator reports
+// filenames with the host's separator, so a `*/rtl/cpu/*` pattern silently
+// matches nothing on Windows and the vendored cores get linted after all.
+
 // Vendored third-party RTL is exempt from our -Wall policy (never linted
 // or fixed; see docs/DEPENDENCIES.md and docs/TESTING.md).
-lint_off -file "*/rtl/cpu/*"
-lint_off -file "*/rtl/via/*"
+lint_off -file "*rtl?cpu?*"
+lint_off -file "*rtl?via?*"
+
+// Deliberate power-up state from declaration initialisers, with no reset:
+// the cart download machinery and the DDR arbiter must keep running while
+// the console is held in reset (see the header of rtl/ddr_mux.sv). Verilator
+// 5.05x reports that combination as PROCASSINIT.
+lint_off -rule PROCASSINIT -file "*rtl?cart.sv"
+lint_off -rule PROCASSINIT -file "*rtl?ddr_mux.sv"
+lint_off -rule PROCASSINIT -file "*rtl?savectl.sv"
+
+// `reset` reaches vendored cores that sample it asynchronously and our own
+// logic that samples it synchronously. That is the design, not an oversight.
+lint_off -rule SYNCASYNCNET -file "*rtl?gametank.sv"

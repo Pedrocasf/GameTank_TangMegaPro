@@ -16,6 +16,7 @@
 
 #include <verilated.h>
 #include "Vcpu_65c02.h"
+#include "vl_compat.h"
 
 class Cpu65 {
 public:

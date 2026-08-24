@@ -28,6 +28,7 @@
 
 #include <verilated.h>
 #include "Vsdram.h"
+#include "vl_compat.h"
 
 #ifndef CHECK
 #define CHECK(cond, ...)                                                  \

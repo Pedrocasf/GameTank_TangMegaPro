@@ -1,0 +1,29 @@
+Windows-only companion to emulator-patches/lockstep-headless.patch.
+
+On Windows the emulator links with mingw g++ against whatever SDL2 the machine
+has, typically scoop's MSVC build. That package's SDL2main.lib supplies its own
+`main`, which collides with mingw's C runtime ("multiple definition of `main`").
+sim/Makefile therefore builds this tree with -DSDL_MAIN_HANDLED and without
+-lSDL2main, which leaves SDL expecting the application to announce its entry
+point itself.
+
+An SDL initialisation detail only: it changes nothing about emulation, which
+the byte-identical lockstep_blit_scene comparison confirms.
+
+Applied after lockstep-headless.patch, so the context below includes that
+patch's lockstep_init() call.
+
+--- a/src/gte.cpp
++++ b/src/gte.cpp
+@@ -1401,6 +1401,11 @@
+ }
+ 
+ int main(int argC, char* argV[]) {
++#ifdef SDL_MAIN_HANDLED
++    // We keep our own main (see the Windows branch in sim/Makefile), so
++    // tell SDL the entry-point handshake is already taken care of.
++    SDL_SetMainReady();
++#endif
+ 	lockstep_init();
+ 	srand(time(NULL));
+ 	cartridge_state.rom = new uint8_t[1 << 21];

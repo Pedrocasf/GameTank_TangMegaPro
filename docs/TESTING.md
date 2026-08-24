@@ -70,6 +70,25 @@ audio, OSD load of several games on the DE10-Nano.
 
 ## CI
 
+### Running on Windows
+
+`sim/Makefile` has a `Windows_NT` branch, so the stock targets work under Git
+Bash with mingw g++ — including the lockstep tier, which needs the reference
+emulator built locally. Three differences it handles:
+
+- executables carry `.exe`, the emulator included;
+- SDL2 usually comes from `scoop install sdl2`, which is an **MSVC** build.
+  Its `SDL2main.lib` cannot be linked by mingw (duplicate `main`), so the
+  emulator is built with `-DSDL_MAIN_HANDLED`, without `-lSDL2main`, and with
+  `emulator-patches/windows-sdl-main.patch` applied on top of the lockstep
+  patch. Set `SDL_ROOT` if SDL2 lives outside scoop's default location;
+- that `SDL2.dll` goes on `PATH` while the emulator runs.
+
+Tools the suite expects on `PATH`: Verilator (oss-cad-suite is fine) and cc65
+for the test carts. `sim/waivers.vlt` matches paths with `?` as the separator
+rather than `/`, because Verilator reports host-native separators and the
+vendored-core waivers would otherwise match nothing on Windows.
+
 GitHub Actions (`.github/workflows/test.yml`): unit + integration on every
 push/PR. Ubuntu runner: apt/verilator + SDL2 + cc65, build headless emulator,
 run `tools/gametank-test all`. No Quartus in CI — synthesis is local via
