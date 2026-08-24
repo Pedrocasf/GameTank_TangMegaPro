@@ -44,7 +44,7 @@ Three things make this cheap:
 | Audio | 3.5 mm jack + speaker header — **codec not documented, check schematic** |
 | Input | 40-pin header, 3 × PMOD; **no onboard USB-host MCU** (unlike Tang Console / Nano 20K's BL616) |
 | Extras | hardened RISC-V AE350 SoC, PCIe 3.0 ×4, 2 × SFP+, GbE |
-| Toolchain | Gowin EDA ≥ 1.9.9, **commercial (not Education) license required** for GW5AST-138; Sipeed run an online license service |
+| Toolchain | Gowin EDA ≥ 1.9.9, **commercial (not Education) license required** for GW5AST-138; Sipeed run an online license service. Installed here: 1.9.12.03 at `D:\Gowin`, GW5AST-138B/C device data present, **license not yet installed** |
 
 Sources at the end of this document.
 
@@ -128,8 +128,13 @@ unknown (the toolchain) is answered on day one.
 
 - Gowin EDA project (`gw_sh` scriptable), Gowin rPLL/PLLA at 28.636364 MHz,
   `altsyncram` replaced, `rtl/` synthesized standalone with a stub top.
-- Prefer **Synplify Pro** (bundled with Gowin EDA for Arora devices) over
-  GowinSynthesis for SystemVerilog maturity.
+- **Synthesizer: GowinSynthesis.** The 1.9.12.03 install carries no bundled
+  Synplify Pro, so there is no fallback with better SystemVerilog coverage —
+  K1 is answered here or not at all.
+- **Blocked on a license first.** `gw_sh` refuses to start without one
+  ("License verification failed"); GW5AST-138 is not covered by the free
+  Education edition. Apply via Gowin (MAC-locked `.lic`) or point the IDE at
+  Sipeed's online license service, then re-check with `gw_sh -v`.
 - **Done when:** `rtl/` synthesizes clean and the fitter reports resource
   usage; any SV rewrites are pushed back through Verilator so the sim suite
   still passes.
@@ -211,7 +216,7 @@ slots and joystick decode; none of that exists on a Tang.
 
 | # | Item | Mitigation |
 |---|---|---|
-| K1 | SystemVerilog maturity in GowinSynthesis (`always_ff`, `typedef enum`, `unique case`, 2-D arrays are used throughout `rtl/`) | Use bundled Synplify Pro; T0 answers this before anything else is built |
+| K1 | SystemVerilog maturity in GowinSynthesis (`always_ff`, `typedef enum`, `unique case`, 2-D arrays are used throughout `rtl/`) — and **no Synplify Pro is bundled** with the 1.9.12.03 install, so there is no better-coverage fallback | T0 answers this before anything else is built; unsupported constructs get targeted rewrites pushed back through Verilator |
 | K2 | Registers relying on declaration initializers with no reset — deliberate in [ddr_mux.sv:63](../rtl/ddr_mux.sv:63) and the cart download path | Confirm Gowin emits power-up init values in the bitstream; add resets only if it does not |
 | K3 | `$readmemh` BSRAM init for the 32 KB boot cart (`bootcart.mem`) | Verify in T0; fallback is a generated `.mi` file |
 | K4 | GRAM port replication (see T1) | Trial synthesis decides; DDR3 path stays as fallback |
