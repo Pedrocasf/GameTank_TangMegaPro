@@ -1,32 +1,104 @@
 //============================================================================
-//  Pin constraints for the Sipeed TANG_SDRAM module (40-pin header).
+//  Pin constraints for the 16-bit SDRAM (T3).
 //
-//  *** PIN LOCATIONS ARE NOT FILLED IN YET. ***
+//  Generated from tang/mega.cst, the board constraint file supplied for this
+//  project, by renaming its signals to the ports of tang/gametank_tang.sv:
+//    IO_sdram_dq -> sdram_dq, O_sdram_addr -> sdram_a, O_sdram_wen_n ->
+//    sdram_we_n, and so on. No pin number was typed by hand.
 //
-//  The signal set below is complete and matches tang/gametank_tang.sv, but the
-//  FPGA pin for each one depends on the Tang Mega 138K Pro Dock's 40-pin
-//  header wiring, which is not published in the Sipeed example projects or the
-//  wiki. Fill them from the dock schematic (Sipeed's board documentation
-//  package) before building with the `sdram` option — tang/syn.tcl refuses to
-//  run without at least one IO_LOC here, precisely so a half-configured build
-//  cannot be flashed onto a board with a module attached.
+//  *** Two things to know before trusting this on hardware. ***
 //
-//  Two warnings when reading the schematic:
-//    - The module is NOT pin-compatible with a MiSTer SDRAM v3.0 board; pins
-//      29 and 30 of the 40P connector differ.
-//    - The module carries two 16-bit chips. This controller drives one; if the
-//      second shares address/command and differs only by chip select, tie its
-//      CS inactive or extend tang/sdram.sv.
+//  1. tang/mega.cst calls itself "CST for Console 60K/138K" — the Tang
+//     Console, not the Mega 138K Pro Dock this port targets. Every signal the
+//     two boards share does match Sipeed's dock reference (clock P16, button
+//     K16, the five LEDs, all four TMDS pairs), which is good evidence the
+//     carriers assign the SoM identically, and the commented-out lines in that
+//     file place the SDRAM on PMOD1. It is still evidence, not proof: confirm
+//     against the dock schematic before powering a module up.
 //
-//  Signals to place (all LVCMOS33, 8 mA, no pull):
-//    sdram_clk, sdram_cke, sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n
-//    sdram_ba[1:0], sdram_a[12:0], sdram_dqm[1:0], sdram_dq[15:0]
+//  2. There is no SDRAM CKE pin in that file (only the DDR3's `ddr_cke`), so
+//     the board ties clock-enable high. tang/sdram.sv still drives `sd_cke`;
+//     the top simply leaves it unconnected. The controller's power-up sequence
+//     does not depend on being able to lower it.
 //
-//  Template — uncomment and complete:
-//
-//  IO_LOC "sdram_clk" <pin>;
-//  IO_PORT "sdram_clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
-//  IO_LOC "sdram_dq[0]" <pin>;
-//  IO_PORT "sdram_dq[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
-//  ... and so on for every signal above.
+//  Drive strength is left at the Gowin default, matching the source file. If
+//  reads are marginal on the ribbon, that and tang/sdram.sv's RD_EXTRA are the
+//  knobs — raise drive last, since ringing on a 16-bit bus is its own problem.
 //============================================================================
+
+IO_LOC "sdram_clk" V23;
+IO_PORT "sdram_clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_cs_n" U26;
+IO_PORT "sdram_cs_n" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_ras_n" W25;
+IO_PORT "sdram_ras_n" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_cas_n" W26;
+IO_PORT "sdram_cas_n" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_we_n" Y26;
+IO_PORT "sdram_we_n" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_ba[0]" V26;
+IO_PORT "sdram_ba[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_ba[1]" W20;
+IO_PORT "sdram_ba[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[0]" V19;
+IO_PORT "sdram_a[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[1]" W19;
+IO_PORT "sdram_a[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[2]" U22;
+IO_PORT "sdram_a[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[3]" V22;
+IO_PORT "sdram_a[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[4]" Y25;
+IO_PORT "sdram_a[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[5]" AA25;
+IO_PORT "sdram_a[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[6]" AA24;
+IO_PORT "sdram_a[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[7]" AB25;
+IO_PORT "sdram_a[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[8]" AB26;
+IO_PORT "sdram_a[8]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[9]" AC26;
+IO_PORT "sdram_a[9]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[10]" Y20;
+IO_PORT "sdram_a[10]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[11]" U25;
+IO_PORT "sdram_a[11]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_a[12]" U24;
+IO_PORT "sdram_a[12]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dqm[0]" L22;
+IO_PORT "sdram_dqm[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dqm[1]" M24;
+IO_PORT "sdram_dqm[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[0]" U16;
+IO_PORT "sdram_dq[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[1]" V16;
+IO_PORT "sdram_dq[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[2]" U15;
+IO_PORT "sdram_dq[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[3]" V17;
+IO_PORT "sdram_dq[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[4]" W21;
+IO_PORT "sdram_dq[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[5]" Y21;
+IO_PORT "sdram_dq[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[6]" P21;
+IO_PORT "sdram_dq[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[7]" U17;
+IO_PORT "sdram_dq[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[8]" P25;
+IO_PORT "sdram_dq[8]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[9]" W23;
+IO_PORT "sdram_dq[9]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[10]" T25;
+IO_PORT "sdram_dq[10]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[11]" R25;
+IO_PORT "sdram_dq[11]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[12]" R23;
+IO_PORT "sdram_dq[12]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[13]" T23;
+IO_PORT "sdram_dq[13]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[14]" P24;
+IO_PORT "sdram_dq[14]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "sdram_dq[15]" P23;
+IO_PORT "sdram_dq[15]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;

@@ -21,5 +21,5 @@ set_output_delay -clock clk_sdram -min -0.8 [get_ports {sdram_dq[*]}]
 set_output_delay -clock clk_sdram -max  2.0 [get_ports {sdram_a[*] sdram_ba[*] sdram_dqm[*]}]
 set_output_delay -clock clk_sdram -min -0.8 [get_ports {sdram_a[*] sdram_ba[*] sdram_dqm[*]}]
 
-set_output_delay -clock clk_sdram -max  2.0 [get_ports {sdram_cs_n sdram_ras_n sdram_cas_n sdram_we_n sdram_cke}]
-set_output_delay -clock clk_sdram -min -0.8 [get_ports {sdram_cs_n sdram_ras_n sdram_cas_n sdram_we_n sdram_cke}]
+set_output_delay -clock clk_sdram -max  2.0 [get_ports {sdram_cs_n sdram_ras_n sdram_cas_n sdram_we_n}]
+set_output_delay -clock clk_sdram -min -0.8 [get_ports {sdram_cs_n sdram_ras_n sdram_cas_n sdram_we_n}]

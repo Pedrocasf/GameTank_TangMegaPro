@@ -296,17 +296,39 @@ CL=2 its words are latchable at N+3..N+6, which is `RD_EXTRA = 0`. Hardware may
 still need 1 once flight time is real — that and the ODDR clock polarity are
 the bring-up knobs.
 
-**Not done:** the test has never been executed — there is no Verilator on the
-machine doing the port, so it is written but unrun. And
-[tang/sdram.cst](../tang/sdram.cst) has **no pin locations** — the Mega 138K
-Pro Dock's 40-pin header wiring is not in Sipeed's example projects or wiki, so
-it has to come off the dock schematic. `tang/syn.tcl` refuses to build the
-`sdram` option until at least one `IO_LOC` exists there, so a half-configured
-bitstream cannot reach a board with a module plugged in.
+**Pinout** came from `tang/mega.cst`, a board constraint file supplied for
+this project; [tang/sdram.cst](../tang/sdram.cst) is generated from it by
+renaming signals to our ports, so no pin number was transcribed by hand. Two
+caveats live in that file's header and are worth repeating:
 
-Two warnings for whoever fills that file in: the Sipeed module is **not**
-pin-compatible with a MiSTer SDRAM v3.0 board (pins 29/30 differ), and it
-carries two 16-bit chips where this controller drives one.
+- `tang/mega.cst` calls itself **"CST for Console 60K/138K"** — the Tang
+  Console, not the Mega 138K Pro Dock. Every signal the two share does match
+  Sipeed's dock reference (clock P16, button K16, the five LEDs, all four TMDS
+  pairs), and the file's own commented-out lines put the SDRAM on PMOD1, which
+  is good evidence the carriers assign the SoM identically. It is evidence,
+  not proof — confirm against the dock schematic before powering a module up.
+- There is **no SDRAM CKE pin** in it, so the board ties clock-enable high.
+  The controller still drives `sd_cke`; the top leaves it unconnected.
+
+**The SDRAM variant now builds end to end** (`gw_sh tang/syn.tcl sdram`):
+
+| Resource | With SDRAM | With the BRAM stand-in |
+|---|---|---|
+| Logic | 6,047 (5%) | 5,360 (4%) |
+| Registers | 3,049 (3%) | 2,285 (2%) |
+| BSRAM | 85 / 340 (25%) | 117 / 340 (35%) |
+| I/O | 53 / 312 (17%) | 15 / 312 (5%) |
+
+BSRAM *drops* because the 64 KB stand-in is gone. Fmax: clk_sys 47.5 MHz
+against 28.65 needed, **clk_sdram 100.3 MHz against 85.94 needed** (17%
+margin), clk_serial comfortably clear. Zero setup and zero hold violations on
+both variants.
+
+**Not done:** the Verilator test has never been executed — there is no
+Verilator on the machine doing the port — and nothing has run on hardware.
+When a module is attached, mind that the Sipeed part is **not** pin-compatible
+with a MiSTer SDRAM v3.0 board (pins 29/30 differ), and that it carries two
+16-bit chips where this controller drives one.
 
 ### T4 — Front-end: SD, OSD, saves
 
@@ -360,7 +382,7 @@ slots and joystick decode; none of that exists on a Tang.
 | K5 | ~~Board unknowns: reference clock, DVI TX topology~~ — **resolved for video in T2** (50 MHz on P16; TMDS straight off FPGA pins via TLVDS_OBUF). The audio codec is still unknown | Pull the schematic before wiring the T5 audio path |
 | K6 | Gamepad sourcing on a dock with no USB-host MCU | Decide early — it may motivate the Tang Console 138K instead (below) |
 | K7 | Licensed toolchain blocks synthesis in CI | Accept; Verilator CI is the real gate anyway |
-| K8 | The 40-pin header pinout for the SDRAM module is undocumented; `tang/sdram.cst` is empty | Read it off the dock schematic; the build refuses to run without it |
+| K8 | ~~The SDRAM pinout is undocumented~~ — **closed**: taken from `tang/mega.cst`, though that file is labelled for the Tang Console rather than the Mega Pro Dock | Check the SDRAM pins against the dock schematic before powering a module |
 | K9 | `tang/sdram.sv` has never been *run* — the Verilator test exists but this machine has no Verilator | Run `gametank-test unit --test sdram` on the Linux box before wiring a module |
 
 ### Board alternative worth naming

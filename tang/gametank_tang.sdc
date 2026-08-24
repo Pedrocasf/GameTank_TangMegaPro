@@ -22,9 +22,13 @@ create_generated_clock -name clk_sdram -source [get_ports {clk}] -master_clock c
 // The board clock domain holds nothing but the PLL input.
 set_clock_groups -asynchronous -group [get_clocks {clk}]                                -group [get_clocks {clk_sys clk_serial clk_sdram}]
 
-// The console reset is generated against clk_sys and lands on the DVI
-// serializers through a two-flop synchronizer in tang/dvi_tx.sv. The first
-// stage is an intentional asynchronous crossing, so its setup/pulse-width
-// analysis is meaningless — exclude it rather than letting PnR chase a path
-// that has no timing relationship to honour.
-set_false_path -from [get_regs {rst_cnt*}] -to [get_regs {dvi/rst_ser*}]
+// The console reset lands on the DVI serializers through a two-flop
+// synchronizer in tang/dvi_tx.sv. Its first stage is an intentional
+// asynchronous crossing, so setup analysis on it is meaningless — exclude it
+// rather than letting PnR chase a path with no timing relationship to honour.
+//
+// Constrained by destination, not source: reset is assembled from the PLL
+// lock, the button, and (with the SDRAM back end) init_done out of the
+// clk_sdram domain, so naming sources would have to change every time
+// something new gates reset.
+set_false_path -to [get_regs {dvi/rst_ser*}]

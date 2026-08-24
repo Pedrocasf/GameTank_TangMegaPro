@@ -35,7 +35,7 @@ module gametank_tang
     ,
     // Sipeed TANG_SDRAM module on the 40-pin header
     output logic        sdram_clk,
-    output logic        sdram_cke,
+    // no sdram_cke: the board ties clock-enable high (tang/sdram.cst)
     output logic        sdram_cs_n,
     output logic        sdram_ras_n,
     output logic        sdram_cas_n,
@@ -121,7 +121,7 @@ sdram sdram
     .busy       (ddr_busy),
     .init_done  (mem_ready),
 
-    .sd_cke     (sdram_cke),
+    .sd_cke     (),            // tied high on the board
     .sd_cs_n    (sdram_cs_n),
     .sd_ras_n   (sdram_ras_n),
     .sd_cas_n   (sdram_cas_n),
