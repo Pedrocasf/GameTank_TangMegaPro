@@ -83,6 +83,11 @@ module gametank
 // the real declaration (docs/PORTING_TANG.md §T0) — silently truncating buses
 // like g_addr. Quartus and Verilator accept either order.
 // ---------------------------------------------------------------------------
+logic [7:0]  win_din;
+logic        pad1_rd, pad2_rd;
+logic [7:0]  pad_q;
+logic        via_wen, via_ren /*verilator public_flat_rd*/;
+logic [7:0]  via_shadow_q;
 logic        cart_rd, cart_wr, cart_present;
 logic [7:0]  cart_wdata;
 logic [7:0]  cart_int_data /*verilator public_flat_rd*/;
@@ -150,7 +155,6 @@ always_ff @(posedge clk_sys) begin
 end
 
 logic [13:0] win_addr /*verilator public_flat_rd*/;
-logic [7:0]  win_din;
 logic        cpu_vram_we, cpu_gram_we, cpu_gram_rd, blit_param_we;
 logic [7:0]  vram_a_dout, gram_b_dout;
 logic [13:0] vram_b_addr;
@@ -205,8 +209,6 @@ mainbus mainbus
 );
 
 // Gamepads
-logic       pad1_rd, pad2_rd;
-logic [7:0] pad_q;
 
 pads pads
 (
@@ -222,7 +224,6 @@ pads pads
 // 6522 VIA at $2800-$2FFF. Its phi2 is the CPU cycle: `falling` = the RDY
 // strobe (end of cycle, when writes commit), `rising` = mid-window. Port A
 // becomes the cartridge bank SPI in M7; until then ports float high.
-logic       via_wen, via_ren /*verilator public_flat_rd*/;
 logic [7:0] via_q;
 logic       via_irq;
 
@@ -236,7 +237,7 @@ logic       via_irq;
 // write-shadow, and via_irq is not raised. The real via6522 remains
 // instantiated underneath so its pin-level behavior stays available.
 logic [7:0] via_shadow [0:15];
-wire  [7:0] via_shadow_q = via_shadow[win_addr[3:0]];
+assign via_shadow_q = via_shadow[win_addr[3:0]];
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         for (int i = 0; i < 16; i++) via_shadow[i] <= 8'h00;

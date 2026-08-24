@@ -13,8 +13,14 @@ create_generated_clock -name clk_sys -source [get_ports {clk}] -master_clock clk
 
 create_generated_clock -name clk_serial -source [get_ports {clk}] -master_clock clk     -divide_by 96 -multiply_by 275 [get_pins {pll/pll_inst/CLKOUT0}]
 
+// SDRAM clock, exactly 3x clk_sys off the same VCO. It shares a group with
+// clk_sys below on purpose: tang/sdram.sv hands data between the two domains
+// directly, and that transfer is only safe because STA times it. Moving this
+// clock into its own asynchronous group would silently un-time those paths.
+create_generated_clock -name clk_sdram -source [get_ports {clk}] -master_clock clk     -divide_by 32 -multiply_by 55 [get_pins {pll/pll_inst/CLKOUT2}]
+
 // The board clock domain holds nothing but the PLL input.
-set_clock_groups -asynchronous -group [get_clocks {clk}]                                -group [get_clocks {clk_sys clk_serial}]
+set_clock_groups -asynchronous -group [get_clocks {clk}]                                -group [get_clocks {clk_sys clk_serial clk_sdram}]
 
 // The console reset is generated against clk_sys and lands on the DVI
 // serializers through a two-flop synchronizer in tang/dvi_tx.sv. The first

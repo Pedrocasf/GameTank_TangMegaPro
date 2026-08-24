@@ -3,9 +3,22 @@
 # Device version is overridable:  gw_sh tang/syn.tcl 138C
 
 set dev_ver "B"
-if {$argc > 0} {
-    set arg [lindex $argv 0]
+set use_sdram 0
+foreach arg $argv {
     if {[string match "*138C*" $arg]} { set dev_ver "C" }
+    if {[string match "*sdram*" $arg]} { set use_sdram 1 }
+}
+
+# A build with the SDRAM back end but no pin locations would let the fitter
+# place the memory bus wherever it liked, on a board that has a module plugged
+# into the 40-pin header. Refuse instead.
+if {$use_sdram} {
+    set fh [open "tang/sdram.cst" r]
+    set cst [read $fh]
+    close $fh
+    if {![regexp {(?m)^\s*IO_LOC} $cst]} {
+        error "tang/sdram.cst has no IO_LOC lines: fill in the 40-pin header               pin numbers from the dock schematic before building with sdram"
+    }
 }
 
 if {$dev_ver eq "C"} {
@@ -16,6 +29,7 @@ if {$dev_ver eq "C"} {
 
 # --- macro definitions (must be first: see the file header) ---
 add_file -type verilog tang/gowin_defines.v
+if {$use_sdram} { add_file -type verilog tang/sdram_defines.v }
 
 # --- console core (shared verbatim with the MiSTer build) ---
 add_file -type verilog rtl/gametank.sv
@@ -41,9 +55,17 @@ add_file -type verilog tang/linedouble.sv
 add_file -type verilog tang/tmds_encoder.sv
 add_file -type verilog tang/dvi_tx.sv
 add_file -type verilog tang/ddr_bram.sv
+if {$use_sdram} {
+    add_file -type verilog tang/sdram.sv
+    add_file -type verilog tang/sdram_io.sv
+}
 add_file -type verilog tang/pll_tang.v
 add_file -type cst     tang/gametank_tang.cst
 add_file -type sdc     tang/gametank_tang.sdc
+if {$use_sdram} {
+    add_file -type cst tang/sdram.cst
+    add_file -type sdc tang/sdram.sdc
+}
 
 set_option -top_module gametank_tang
 set_option -verilog_std sysv2017

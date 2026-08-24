@@ -7,8 +7,10 @@
 //
 //    - cartridge   : the built-in boot cart in BRAM, exactly as the MiSTer
 //                    wrapper serves it before an OSD load (GameTank.sv)
-//    - DDR3        : tang/ddr_bram.sv, a 64 KB on-chip stand-in (T3 replaces
-//                    it with the Gowin DDR3 controller)
+//    - memory      : with `TANG_SDRAM defined, tang/sdram.sv drives the
+//                    Sipeed 40-pin SDRAM module (T3); otherwise
+//                    tang/ddr_bram.sv, a 64 KB on-chip stand-in that needs
+//                    no module attached
 //    - SD / saves  : tied off; no image is ever mounted
 //    - gamepads    : tied off (T5)
 //    - audio       : not routed off-chip yet (T5)
@@ -28,12 +30,28 @@ module gametank_tang
     output logic       tmds_clk_n,
     output logic [2:0] tmds_d_p,
     output logic [2:0] tmds_d_n
+
+`ifdef TANG_SDRAM
+    ,
+    // Sipeed TANG_SDRAM module on the 40-pin header
+    output logic        sdram_clk,
+    output logic        sdram_cke,
+    output logic        sdram_cs_n,
+    output logic        sdram_ras_n,
+    output logic        sdram_cas_n,
+    output logic        sdram_we_n,
+    output logic [1:0]  sdram_ba,
+    output logic [12:0] sdram_a,
+    output logic [1:0]  sdram_dqm,
+    inout  wire  [15:0] sdram_dq
+`endif
 );
 
 ///////////////////////////   CLOCKS   ///////////////////////////////////////
 
-wire clk_sys;       // 28.636364 MHz — 8x NTSC colorburst, the console clock
-wire clk_serial;    // 143.181818 MHz — 5x, for the TMDS serializers
+wire clk_sys;       // 28.645833 MHz — the console clock (+331 ppm, see pll_tang.v)
+wire clk_serial;    // 143.229167 MHz — 5x, for the TMDS serializers
+wire clk_sdram;     // 85.9375 MHz — 3x, for the SDRAM controller
 wire pll_lock;
 
 pll_tang pll
@@ -41,16 +59,20 @@ pll_tang pll
     .clkin      (clk),
     .clk_sys    (clk_sys),
     .clk_serial (clk_serial),
+    .clk_sdram  (clk_sdram),
     .lock       (pll_lock)
 );
 
-// Hold the console in reset until the PLL is locked and settled.
+// Hold the console in reset until the PLL is locked and settled. The SDRAM
+// needs its 200 us power-up sequence on top of that, so the memory holds the
+// console back until it is ready to answer (mem_ready below).
 logic [15:0] rst_cnt = '0;
 always_ff @(posedge clk_sys) begin
     if (!pll_lock || !rst_n) rst_cnt <= '0;
     else if (!rst_cnt[15])   rst_cnt <= rst_cnt + 1'd1;
 end
-wire reset = ~rst_cnt[15];
+wire mem_ready;
+wire reset = ~rst_cnt[15] | ~mem_ready;
 
 ///////////////////////////   BOOT CART   ////////////////////////////////////
 
@@ -73,10 +95,63 @@ wire [7:0]  ddr_be, ddr_burstcnt;
 wire [63:0] ddr_dout;
 wire        ddr_dout_ready, ddr_busy;
 
+// The console must come out of reset before the memory can serve it, so the
+// memory's own reset is the PLL-settled one, not the console reset it gates.
+wire mem_reset = ~rst_cnt[15];
+
+`ifdef TANG_SDRAM
+
+wire [15:0] sd_dq_out, sd_dq_in;
+wire        sd_dq_oe;
+
+sdram sdram
+(
+    .clk_bus    (clk_sys),
+    .clk_sdram  (clk_sdram),
+    .reset      (mem_reset),
+
+    .rd         (ddr_rd),
+    .we         (ddr_we),
+    .addr       (ddr_addr),
+    .din        (ddr_din),
+    .be         (ddr_be),
+    .burstcnt   (ddr_burstcnt),
+    .dout       (ddr_dout),
+    .dout_ready (ddr_dout_ready),
+    .busy       (ddr_busy),
+    .init_done  (mem_ready),
+
+    .sd_cke     (sdram_cke),
+    .sd_cs_n    (sdram_cs_n),
+    .sd_ras_n   (sdram_ras_n),
+    .sd_cas_n   (sdram_cas_n),
+    .sd_we_n    (sdram_we_n),
+    .sd_ba      (sdram_ba),
+    .sd_a       (sdram_a),
+    .sd_dqm     (sdram_dqm),
+    .dq_in      (sd_dq_in),
+    .dq_out     (sd_dq_out),
+    .dq_oe      (sd_dq_oe)
+);
+
+sdram_io sdram_io
+(
+    .clk_sdram (clk_sdram),
+    .dq_out    (sd_dq_out),
+    .dq_oe     (sd_dq_oe),
+    .dq_in     (sd_dq_in),
+    .sdram_clk (sdram_clk),
+    .sdram_dq  (sdram_dq)
+);
+
+`else
+
+assign mem_ready = 1'b1;
+
 ddr_bram ddr
 (
     .clk        (clk_sys),
-    .reset      (reset),
+    .reset      (mem_reset),
     .rd         (ddr_rd),
     .we         (ddr_we),
     .addr       (ddr_addr),
@@ -87,6 +162,8 @@ ddr_bram ddr
     .dout_ready (ddr_dout_ready),
     .busy       (ddr_busy)
 );
+
+`endif
 
 ///////////////////////////   CONSOLE   //////////////////////////////////////
 

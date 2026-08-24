@@ -1,0 +1,32 @@
+//============================================================================
+//  Pin constraints for the Sipeed TANG_SDRAM module (40-pin header).
+//
+//  *** PIN LOCATIONS ARE NOT FILLED IN YET. ***
+//
+//  The signal set below is complete and matches tang/gametank_tang.sv, but the
+//  FPGA pin for each one depends on the Tang Mega 138K Pro Dock's 40-pin
+//  header wiring, which is not published in the Sipeed example projects or the
+//  wiki. Fill them from the dock schematic (Sipeed's board documentation
+//  package) before building with the `sdram` option — tang/syn.tcl refuses to
+//  run without at least one IO_LOC here, precisely so a half-configured build
+//  cannot be flashed onto a board with a module attached.
+//
+//  Two warnings when reading the schematic:
+//    - The module is NOT pin-compatible with a MiSTer SDRAM v3.0 board; pins
+//      29 and 30 of the 40P connector differ.
+//    - The module carries two 16-bit chips. This controller drives one; if the
+//      second shares address/command and differs only by chip select, tie its
+//      CS inactive or extend tang/sdram.sv.
+//
+//  Signals to place (all LVCMOS33, 8 mA, no pull):
+//    sdram_clk, sdram_cke, sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n
+//    sdram_ba[1:0], sdram_a[12:0], sdram_dqm[1:0], sdram_dq[15:0]
+//
+//  Template — uncomment and complete:
+//
+//  IO_LOC "sdram_clk" <pin>;
+//  IO_PORT "sdram_clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+//  IO_LOC "sdram_dq[0]" <pin>;
+//  IO_PORT "sdram_dq[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+//  ... and so on for every signal above.
+//============================================================================

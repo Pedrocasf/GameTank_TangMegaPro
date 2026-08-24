@@ -9,6 +9,9 @@
 //    Fvco = Fpfd * FBDIV * MDIV      = 25 * 1 * 34.375 = 859.375 MHz
 //    CLKOUT0 = Fvco / ODIV0(6)       = 143.229167 MHz  (TMDS serial, 5x)
 //    CLKOUT1 = Fvco / ODIV1(30)      =  28.645833 MHz  (clk_sys / pixel)
+//    CLKOUT2 = Fvco / ODIV2(10)      =  85.937500 MHz  (SDRAM, exactly 3x
+//                                                       clk_sys — see
+//                                                       tang/sdram.sv)
 //
 //  The exact console clock is unreachable from this board: 28.636364 =
 //  50 * 63/110, and the 11 in that denominator would need IDIV = 11, i.e.
@@ -34,10 +37,11 @@ module pll_tang
     input  wire clkin,          // 50 MHz board clock
     output wire clk_sys,        // 28.645833 MHz (console clock, +331 ppm)
     output wire clk_serial,     // 143.229167 MHz (5x clk_sys)
+    output wire clk_sdram,      //  85.937500 MHz (3x clk_sys)
     output wire lock
 );
 
-wire clkout2, clkout3, clkout4, clkout5, clkout6, clkfbout;
+wire clkout3, clkout4, clkout5, clkout6, clkfbout;
 wire gnd = 1'b0;
 wire vcc = 1'b1;
 
@@ -46,7 +50,7 @@ PLL pll_inst
     .LOCK      (lock),
     .CLKOUT0   (clk_serial),
     .CLKOUT1   (clk_sys),
-    .CLKOUT2   (clkout2),
+    .CLKOUT2   (clk_sdram),
     .CLKOUT3   (clkout3),
     .CLKOUT4   (clkout4),
     .CLKOUT5   (clkout5),
@@ -101,14 +105,14 @@ defparam pll_inst.MDIV_FRAC_SEL = 3;
 defparam pll_inst.ODIV0_SEL = 6;
 defparam pll_inst.ODIV0_FRAC_SEL = 0;
 defparam pll_inst.ODIV1_SEL = 30;
-defparam pll_inst.ODIV2_SEL = 8;
+defparam pll_inst.ODIV2_SEL = 10;
 defparam pll_inst.ODIV3_SEL = 8;
 defparam pll_inst.ODIV4_SEL = 8;
 defparam pll_inst.ODIV5_SEL = 8;
 defparam pll_inst.ODIV6_SEL = 8;
 defparam pll_inst.CLKOUT0_EN = "TRUE";
 defparam pll_inst.CLKOUT1_EN = "TRUE";
-defparam pll_inst.CLKOUT2_EN = "FALSE";
+defparam pll_inst.CLKOUT2_EN = "TRUE";
 defparam pll_inst.CLKOUT3_EN = "FALSE";
 defparam pll_inst.CLKOUT4_EN = "FALSE";
 defparam pll_inst.CLKOUT5_EN = "FALSE";

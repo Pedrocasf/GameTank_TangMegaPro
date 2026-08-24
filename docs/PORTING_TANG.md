@@ -4,7 +4,7 @@ Feasibility study (2026-08-23) for retargeting this core from the MiSTer
 (DE10-Nano, Cyclone V + HPS) to the Sipeed Tang Mega 138K Pro Dock
 (Gowin GW5AST-138, no HPS).
 
-**Status: T0, T1 and T2 executed (2026-08-23/24).** The core synthesizes
+**Status: T0, T1, T2 done; T3 in progress (2026-08-23/24).** The core synthesizes
 clean under GowinSynthesis; GRAM stays in DDR3; and the video top in `tang/`
 places, routes and generates a bitstream with zero setup/hold violations.
 Nothing has run on real hardware yet. Everything from T3 onward is still
@@ -108,7 +108,7 @@ Note: Gowin counts BSRAM in 18 Kb units (340 × 18 Kb = 6,120 Kb), and a
 byte-wide port uses 16 of each 18 bits — so byte RAMs cost ~12% more units
 than a bit count suggests.
 
-### Resolved: GRAM stays in DDR3
+### Resolved: GRAM stays in external memory
 
 Putting the 512 KB GRAM in BSRAM was tempting — it would delete
 [rtl/gram_ddr.sv](../rtl/gram_ddr.sv) (382 lines of prefetcher) *and* the
@@ -126,8 +126,8 @@ any width the blitter can use.
 
 This matches the M4 Quartus experience recorded at
 [DEVELOPMENT_PLAN.md:83](DEVELOPMENT_PLAN.md:83) (9.7 Mbit demanded). So
-`gram_ddr.sv` survives the port unchanged, and the DDR3 bridge (T3) is on the
-critical path — as it would have been anyway for the 2 MB cart image
+`gram_ddr.sv` survives the port unchanged, and an external memory (T3) is on
+the critical path — as it would have been anyway for the 2 MB cart image
 ([cart.sv:41](../rtl/cart.sv:41)).
 
 ## Work items
@@ -241,16 +241,57 @@ minimum-pulse-width artifacts on the reset synchronizer's own flops (setup
 and hold are clean; the reported "actual width" is negative, which is a
 modelling artifact rather than a physical pulse).
 
-### T3 — DDR3 bridge
+### T3 — External memory: SDRAM, not DDR3 🚧
 
-- Async FIFO bridge from `clk_sys` (28.636 MHz) to the Gowin DDR3 user clock,
-  presenting the `rd/we/busy/dout_ready/burstcnt` semantics that
-  [ddr_mux.sv:1](../rtl/ddr_mux.sv:1) documents and its three clients assume.
-- Low risk by construction: every client already tolerates variable, high
-  latency (blitter stalls, CPU clock-enable stretch, background save pacing).
-- **Done when:** the existing integration tests (`cart_download`, `cart_cache`,
-  `gram_*`, `blit_contention`) pass against the bridged path in simulation,
-  and a `.gtr` preloaded into DDR3 runs on hardware.
+**Decision (2026-08-24): a 16-bit SDRAM module on the 40-pin header, not the
+board's DDR3.** Capacity and bandwidth are non-issues either way — the console
+needs 2.5 MB and under 10 MB/s, and both options are 30x+ over. Latency is the
+axis that differs, and it is the one this project cares about:
+
+| | Onboard DDR3 | 16-bit SDRAM |
+|---|---|---|
+| Read latency | ~200-400 ns (IP pipeline + CDC + bank management) | ~100-200 ns |
+| Fits in one 6502 cycle (279 ns)? | no — stalls stay | yes |
+| Controller | vendor IP, encrypted netlist, DQS calibration, own PLL | ~330 lines of ours, simulatable |
+| Clock domains | user clock fixed by the memory clock → async bridge | 3x clk_sys off the same PLL → no CDC |
+| Provenance | vendoring a Gowin IP netlist into a GPL repo is murky | entirely ours |
+| Hardware | already on the board | extra module (~$10) |
+
+The deciding argument is that SDRAM is the only option that can *remove*
+documented deviations rather than institutionalize them: `cart_stall` and
+`blit_starve` exist because HPS DDR3 could not answer inside a 6502 cycle.
+
+**Written so far** — [tang/sdram.sv](../tang/sdram.sv) (controller),
+[tang/sdram_io.sv](../tang/sdram_io.sv) (pad layer), wired into the top behind
+`` `TANG_SDRAM ``, with [tang/sdram.sdc](../tang/sdram.sdc) and a third PLL
+output at 85.9375 MHz (ODIV2 = 10, exactly 3x clk_sys).
+
+Design notes:
+
+- **Drop-in, deliberately.** It speaks the same DDRAM protocol behind
+  [rtl/ddr_mux.sv](../rtl/ddr_mux.sv), so the prefetcher and cart cache stay
+  exactly as they are and all 18 integration tests stay valid. Simplifying
+  `gram_ddr.sv` away is a *later* decision, to be taken only once this is green
+  on hardware — those modules absorbed the entire M8/M9 compatibility campaign.
+- **No CDC.** clk_sdram is 3x clk_sys off one PLL, so the handshake is
+  synchronous multi-rate and STA times it (~11.6 ns). The `.sdc` keeps both
+  clocks in one group; splitting them into asynchronous groups would silently
+  un-time those paths.
+- **Open-row policy**, closed only on a row change or refresh, so a blitter
+  streaming one GRAM row pays CL + burst per beat and nothing more. A burst
+  crossing a row boundary re-activates through the same path — no special case.
+- **Writes are single-beat**, which is what all three clients issue.
+
+**Not done:** the controller has never been simulated or run. And
+[tang/sdram.cst](../tang/sdram.cst) has **no pin locations** — the Mega 138K
+Pro Dock's 40-pin header wiring is not in Sipeed's example projects or wiki, so
+it has to come off the dock schematic. `tang/syn.tcl` refuses to build the
+`sdram` option until at least one `IO_LOC` exists there, so a half-configured
+bitstream cannot reach a board with a module plugged in.
+
+Two warnings for whoever fills that file in: the Sipeed module is **not**
+pin-compatible with a MiSTer SDRAM v3.0 board (pins 29/30 differ), and it
+carries two 16-bit chips where this controller drives one.
 
 ### T4 — Front-end: SD, OSD, saves
 
@@ -304,6 +345,8 @@ slots and joystick decode; none of that exists on a Tang.
 | K5 | ~~Board unknowns: reference clock, DVI TX topology~~ — **resolved for video in T2** (50 MHz on P16; TMDS straight off FPGA pins via TLVDS_OBUF). The audio codec is still unknown | Pull the schematic before wiring the T5 audio path |
 | K6 | Gamepad sourcing on a dock with no USB-host MCU | Decide early — it may motivate the Tang Console 138K instead (below) |
 | K7 | Licensed toolchain blocks synthesis in CI | Accept; Verilator CI is the real gate anyway |
+| K8 | The 40-pin header pinout for the SDRAM module is undocumented; `tang/sdram.cst` is empty | Read it off the dock schematic; the build refuses to run without it |
+| K9 | `tang/sdram.sv` is untested — no simulation, no hardware | Verilator unit test against a behavioural SDRAM model before it ever drives a pin |
 
 ### Board alternative worth naming
 
