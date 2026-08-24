@@ -282,7 +282,22 @@ Design notes:
   crossing a row boundary re-activates through the same path — no special case.
 - **Writes are single-beat**, which is what all three clients issue.
 
-**Not done:** the controller has never been simulated or run. And
+**Testing.** [sim/unit/test_sdram.cpp](../sim/unit/test_sdram.cpp) drives the
+controller against a behavioural chip model
+([sim/common/sdram_harness.h](../sim/common/sdram_harness.h)) that enforces the
+protocol as well as the data: activate before access, tRCD/tRP, no precharge
+into a live burst, refresh cadence, mode-register contents. It covers single
+beats, 8-beat bursts, byte enables, a burst crossing a row boundary, other
+rows and banks, and the busy/dout_ready contract the clients rely on.
+
+The read-capture alignment is the delicate part and is now derived rather than
+guessed: a READ driven out of edge N is sampled by the chip at N+1, so with
+CL=2 its words are latchable at N+3..N+6, which is `RD_EXTRA = 0`. Hardware may
+still need 1 once flight time is real — that and the ODDR clock polarity are
+the bring-up knobs.
+
+**Not done:** the test has never been executed — there is no Verilator on the
+machine doing the port, so it is written but unrun. And
 [tang/sdram.cst](../tang/sdram.cst) has **no pin locations** — the Mega 138K
 Pro Dock's 40-pin header wiring is not in Sipeed's example projects or wiki, so
 it has to come off the dock schematic. `tang/syn.tcl` refuses to build the
@@ -346,7 +361,7 @@ slots and joystick decode; none of that exists on a Tang.
 | K6 | Gamepad sourcing on a dock with no USB-host MCU | Decide early — it may motivate the Tang Console 138K instead (below) |
 | K7 | Licensed toolchain blocks synthesis in CI | Accept; Verilator CI is the real gate anyway |
 | K8 | The 40-pin header pinout for the SDRAM module is undocumented; `tang/sdram.cst` is empty | Read it off the dock schematic; the build refuses to run without it |
-| K9 | `tang/sdram.sv` is untested — no simulation, no hardware | Verilator unit test against a behavioural SDRAM model before it ever drives a pin |
+| K9 | `tang/sdram.sv` has never been *run* — the Verilator test exists but this machine has no Verilator | Run `gametank-test unit --test sdram` on the Linux box before wiring a module |
 
 ### Board alternative worth naming
 

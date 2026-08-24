@@ -25,6 +25,12 @@ Testbenches only for blocks we author:
 - **video timing** — sync/blank positions, vblank IRQ raster position
 - **address decode / bank registers** — directed
 - **cart controller** — DDR3-latency model, prefetch correctness
+- **SDRAM controller** (Tang port) — `tang/sdram.sv` against a behavioural
+  chip in `sim/common/sdram_harness.h`. The model enforces the protocol
+  (activate before access, tRCD/tRP, no precharge into a live burst, refresh
+  cadence, mode-register contents), so it fails on illegal command sequences
+  and not only on wrong data. Built with a scaled-down `CLK_KHZ` so power-up
+  and refresh fit in a unit test.
 
 Import gate (runs once in CI, not a development area): Klaus Dormann's 65C02
 functional suite on the vendored CPU.

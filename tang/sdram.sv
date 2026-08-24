@@ -49,10 +49,17 @@ module sdram #(
     // Byte 0x3000_0000 as a 64-bit word address: the base rtl/gram_ddr.sv and
     // rtl/cart.sv place their images above (MiSTer DDR3 map, kept as-is).
     parameter logic [28:0] BASE_WORD = 29'h0600_0000,
-    // Extra clocks between the CAS latency and the cycle we sample dq_in, to
-    // cover the round trip out to the module and back. Tune on hardware: this
-    // is the knob that decides whether reads come back aligned.
-    parameter int RD_EXTRA = 1
+    // Extra clocks between the CAS latency and the cycle we sample dq_in.
+    //
+    // 0 is the value the protocol calls for with no flight time, and it is
+    // what sim/unit/test_sdram.cpp verifies against the chip model: a READ
+    // driven out of edge N is sampled by the chip at N+1, its four words are
+    // latchable at N+3..N+6, and RD_PIPE = CL puts our capture window exactly
+    // there. On hardware the round trip out to the module and back may push
+    // the data past the setup window at N+3, in which case this becomes 1 —
+    // that, and the ODDR clock polarity in tang/sdram_io.sv, are the two
+    // knobs for read alignment during bring-up.
+    parameter int RD_EXTRA = 0
 )(
     input  logic        clk_bus,      // clk_sys, 28.646 MHz — client domain
     input  logic        clk_sdram,    // 3 x clk_bus, 85.94 MHz
@@ -160,6 +167,10 @@ bus_state_t bus_st = BUS_IDLE;
 logic [3:0] play_idx;
 
 wire [28:0] local_word = addr - BASE_WORD;
+
+// Only 32 MB is reachable and only 8 beats can be asked for; the rest of
+// those inputs is deliberately dropped (same idiom as rtl/gametank.sv).
+wire _unused = &{1'b0, local_word[28:BEAT_BITS], burstcnt[7:4], 1'b0};
 
 always_ff @(posedge clk_bus) begin
     if (reset) begin

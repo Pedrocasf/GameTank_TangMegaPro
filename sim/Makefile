@@ -8,6 +8,7 @@
 VERILATOR ?= verilator
 
 RTL_DIR := $(abspath ../rtl)
+TANG_DIR:= $(abspath ../tang)
 COMMON  := $(abspath common)
 OUT     := out
 
@@ -19,6 +20,11 @@ RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv 
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
 VFLAGS     := --cc --exe --build -j 0 -Wall --assert -O2 --top-module gametank
 VFLAGS_CPU := --cc --exe --build -j 0 -Wno-fatal --x-assign unique --x-initial unique -O2 --top-module cpu_65c02
+# tang/sdram.sv is our own RTL, so it holds to the same -Wall bar as rtl/.
+# CLK_KHZ is scaled down so the 200 us power-up and the 7.8 us refresh
+# interval fit in a unit test (and so refreshes interleave with traffic).
+VFLAGS_SDRAM := --cc --exe --build -j 0 -Wall --assert -O2 --top-module sdram \
+                -GCLK_KHZ=12800
 CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 
 # ---------------------------------------------------------------------------
@@ -26,7 +32,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window sdram cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
 INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch frontbuffer_ownership via_shadow
 SYSTEM_TESTS      := game_smoke
 
@@ -72,6 +78,13 @@ $(OUT)/unit_%: unit/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/unit_$*
 	$(VERILATOR) $(VFLAGS) --Mdir obj_dir/unit_$* -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(RTL_SRCS) $(abspath $<)
+
+# The SDRAM controller is a Tang-port block with its own top and its own
+# harness (a behavioural chip on the pins), so it gets an explicit rule.
+$(OUT)/unit_sdram: unit/test_sdram.cpp common/sdram_harness.h $(TANG_DIR)/sdram.sv | $(OUT)
+	@mkdir -p obj_dir/unit_sdram
+	$(VERILATOR) $(VFLAGS_SDRAM) --Mdir obj_dir/unit_sdram -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(TANG_DIR)/sdram.sv $(abspath $<)
 
 $(OUT)/integration_%: integration/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/integration_$*
