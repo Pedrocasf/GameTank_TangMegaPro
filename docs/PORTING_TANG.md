@@ -383,7 +383,8 @@ slots and joystick decode; none of that exists on a Tang.
 | K6 | Gamepad sourcing on a dock with no USB-host MCU | Decide early — it may motivate the Tang Console 138K instead (below) |
 | K7 | Licensed toolchain blocks synthesis in CI | Accept; Verilator CI is the real gate anyway |
 | K8 | ~~The SDRAM pinout is undocumented~~ — **closed**: taken from `tang/mega.cst`, though that file is labelled for the Tang Console rather than the Mega Pro Dock | Check the SDRAM pins against the dock schematic before powering a module |
-| K9 | `tang/sdram.sv` has never been *run* — the Verilator test exists but this machine has no Verilator | Run `gametank-test unit --test sdram` on the Linux box before wiring a module |
+| K9 | ~~`tang/sdram.sv` has never been run~~ — **closed**: oss-cad-suite (Verilator 5.051) is on this machine and the test passes | — |
+| K10 | The newer Verilator raises ~90 lint warnings on pre-existing `rtl/` (savectl, via6522, ALU) that `sim/waivers.vlt` does not cover, and its `verilated.cpp` wants the legacy `sc_time_stamp` hook the older tests do not define | Neither is caused by the port; both need a pass over the sim setup if the project moves to a current Verilator |
 
 ### Board alternative worth naming
 
@@ -404,18 +405,30 @@ T2 could not leave `rtl/` completely untouched. The edits so far:
 
 Everything else is additive (`tang/`, `tools/gametank-build-tang`).
 
-**The `` `GOWIN `` guards are a debt, not a design.** They exist because the
-Verilator suite cannot be run on the machine doing the port, so the safe move
-was to leave the simulated RTL bit-identical. Once the suite runs green
-against the write-through forms, collapse each guard to a single description —
-otherwise the tests are validating RTL that the Tang bitstream does not
-contain.
+**The `` `GOWIN `` guards were a debt; the suite has now paid it.** They exist
+because the Verilator suite could not be run when the edits were made. It can
+be now (oss-cad-suite is on this machine), and it was run **both ways**:
+
+| Run | Result |
+|---|---|
+| Default (MiSTer/Verilator branches) | **26 pass, 0 fail** — the entire unit and integration suite, lockstep included |
+| `-DGOWIN` (the branches the Tang bitstream contains) | 17 pass, 0 fail |
+
+So the two RAM descriptions are interchangeable as far as the suite can see,
+and the Tang build is no longer running RTL that nothing tests. Collapsing
+each guard to a single description is now a safe, optional cleanup — the one
+reason to hold off is that it would also change what Quartus infers for the
+MiSTer build, and there is no Quartus here to confirm that.
 
 Unchanged:
 
 - All of `sim/` — harness, waivers, every test, and the lockstep emulator
   comparison. Any RTL edit made for Gowin must keep them green; that is the
-  porting contract, and it is currently **unverified for the T2 edits**.
+  porting contract, and it is **verified** for the T2/T3 edits (see above) —
+  including both lockstep tests, which compare frame dumps against the pinned
+  reference emulator. `lockstep_fb_pattern` matches on frame CRC and
+  `lockstep_blit_scene` is byte-identical over 12 frames, so the RTL edits did
+  not move the core off the emulator it is validated against.
 - [HARDWARE.md](HARDWARE.md) and [REQUIREMENTS.md](REQUIREMENTS.md) fidelity
   targets, with one hardware-imposed exception now recorded: the console
   clock runs +331 ppm fast on this board (see T2).
