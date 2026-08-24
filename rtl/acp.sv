@@ -169,9 +169,37 @@ end
 // write belongs to a write transaction (ignored), and a read of a
 // just-written address is a later transaction that sees the committed
 // value on either model.
+// Gowin (docs/PORTING_TANG.md §T0) infers this description into BSRAM
+// happily, so the Tang build takes the behavioural branch too; only Quartus
+// needs the primitive.
 `ifdef VERILATOR
+`define ACP_ARAM_INFERRED
+`endif
+`ifdef GOWIN
+`define ACP_ARAM_INFERRED
+`endif
+
+`ifdef ACP_ARAM_INFERRED
 logic [7:0] aram [0:4095] /*verilator public_flat_rd*/;
 logic [7:0] aram_q;
+`ifdef GOWIN
+// Write-through on both ports: Gowin's BSRAM cannot do read-before-write,
+// and NEW_DATA is what the altsyncram mapping below already selects.
+always_ff @(posedge clk_sys) begin
+    if (a_we) begin
+        aram[a_addr] <= a_din;
+        aram_q <= a_din;
+    end
+    else aram_q <= aram[a_addr];
+end
+always_ff @(posedge clk_sys) begin
+    if (win_we) begin
+        aram[win_addr] <= win_din;
+        win_dout <= win_din;
+    end
+    else win_dout <= aram[win_addr];
+end
+`else
 always_ff @(posedge clk_sys) begin
     if (a_we)
         aram[a_addr] <= a_din;
@@ -182,6 +210,7 @@ always_ff @(posedge clk_sys) begin
         aram[win_addr] <= win_din;
     win_dout <= aram[win_addr];
 end
+`endif
 `else
 wire [7:0] aram_q;
 altsyncram aram

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# tools/gametank-build-tang
+# Build the GameTank core for the Sipeed Tang Mega 138K Pro (Gowin GW5AST-138)
+# and optionally load it over JTAG. Run from the repo root.
+#
+# Usage: gametank-build-tang [--program] [--clean] [--138c]
+#   --program   load impl/pnr/gametank_tang.fs to the board over JTAG (SRAM)
+#   --clean     wipe impl/ before building
+#   --138c      target the GW5AST-138C die (post-2025 boards) instead of 138B
+#
+# Environment:
+#   GOWIN_HOME  Gowin EDA install (default: /d/Gowin/Gowin_V1.9.12.03_x64,
+#               or $GOWIN_HOME if already set)
+#
+# Licensing: GW5AST-138 needs a licensed Gowin EDA — the free Education
+# edition does not cover it. Point the install at a license server by putting
+#   [license]
+#   lic="<ip>:<port>"
+# in $GOWIN_HOME/IDE/bin/gwlicense.ini. Note the ip:port form; the FlexLM
+# style port@ip and the GOWIN_LICENSE_FILE / LM_LICENSE_FILE environment
+# variables are all rejected. Verify with: gw_sh -v
+#
+# The MiSTer build is unaffected — see tools/gametank-build.
+
+set -euo pipefail
+
+GOWIN_HOME="${GOWIN_HOME:-/d/Gowin/Gowin_V1.9.12.03_x64}"
+GW_SH="${GOWIN_HOME}/IDE/bin/gw_sh.exe"
+PROGRAMMER="${GOWIN_HOME}/Programmer/bin/programmer_cli.exe"
+BITSTREAM="impl/pnr/gametank_tang.fs"
+
+PROGRAM=0
+CLEAN=0
+DEVICE_ARG=""
+for arg in "$@"; do
+    case "$arg" in
+        --program) PROGRAM=1 ;;
+        --clean)   CLEAN=1 ;;
+        --138c)    DEVICE_ARG="138C" ;;
+        -h|--help)
+            sed -n '2,26p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        *) echo "unknown arg: $arg" >&2; exit 2 ;;
+    esac
+done
+
+if [[ ! -f tang/syn.tcl ]]; then
+    echo "ERROR: tang/syn.tcl not found. Run from the repo root." >&2
+    exit 1
+fi
+
+if [[ ! -x "$GW_SH" ]]; then
+    echo "ERROR: gw_sh not found at $GW_SH (set GOWIN_HOME)." >&2
+    exit 1
+fi
+
+if [[ $CLEAN -eq 1 ]]; then
+    echo "=== cleaning impl/ ==="
+    rm -rf impl
+fi
+
+echo "=== Gowin build (${DEVICE_ARG:-138B}) ==="
+"$GW_SH" tang/syn.tcl $DEVICE_ARG
+
+if [[ ! -f "$BITSTREAM" ]]; then
+    echo "ERROR: build produced no bitstream at $BITSTREAM" >&2
+    exit 1
+fi
+
+echo
+echo "=== resource usage ==="
+sed -n '/Resource Usage Summary/,/^  =\+$/p' impl/pnr/gametank_tang.rpt.txt |
+    grep -E "Logic|Register|BSRAM|DSP|I/O Port" || true
+
+echo
+echo "=== timing ==="
+grep -oE "Numbers of (Setup|Hold) Violated Endpoints[^0-9]*[0-9]+" \
+     impl/pnr/gametank_tang_tr_content.html |
+    sed 's/<[^>]*>//g' || true
+
+echo
+echo "bitstream: $BITSTREAM"
+
+if [[ $PROGRAM -eq 1 ]]; then
+    if [[ ! -x "$PROGRAMMER" ]]; then
+        echo "ERROR: programmer_cli not found at $PROGRAMMER" >&2
+        exit 1
+    fi
+    echo "=== programming (SRAM) ==="
+    # -r 2 = SRAM program; the board must be connected over the onboard
+    # USB-JTAG debugger.
+    "$PROGRAMMER" --device GW5AST-138B --run 2 --fsFile "$(pwd)/${BITSTREAM}"
+fi

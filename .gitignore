@@ -16,6 +16,12 @@ c5_pin_model_dump.txt
 hps_isw_handoff/
 .qsys_edit/
 
+# Gowin build outputs (Tang port)
+impl/
+*.fs
+*.gprj
+*.gprj.user
+
 # Verilator / simulation outputs
 sim/obj_dir/
 sim/**/obj_dir/

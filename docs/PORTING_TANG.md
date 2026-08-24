@@ -4,9 +4,10 @@ Feasibility study (2026-08-23) for retargeting this core from the MiSTer
 (DE10-Nano, Cyclone V + HPS) to the Sipeed Tang Mega 138K Pro Dock
 (Gowin GW5AST-138, no HPS).
 
-**Status: T0 and T1 executed 2026-08-23** — the core synthesizes clean under
-GowinSynthesis, measured utilization is 19% BSRAM / 4% logic, and GRAM stays
-in DDR3. Details in those sections. Everything from T2 onward is still
+**Status: T0, T1 and T2 executed (2026-08-23/24).** The core synthesizes
+clean under GowinSynthesis; GRAM stays in DDR3; and the video top in `tang/`
+places, routes and generates a bitstream with zero setup/hold violations.
+Nothing has run on real hardware yet. Everything from T3 onward is still
 analysis: read out of this repo or cited from a vendor document.
 
 Scope decisions for the MiSTer core itself remain in
@@ -167,19 +168,78 @@ unknown (the toolchain) is answered on day one.
   "Resolved: GRAM stays in DDR3" above. `gram_ddr.sv` is not going away, so
   T3 is the next real milestone.
 
-### T2 — Video out
+### T2 — Video out ✅ (2026-08-24)
 
-- Line-double the core's native raster into a DVI/TMDS transmitter. The core
-  emits 908 dots × 262 lines at a 14.318 MHz dot clock, 60.19 Hz
-  ([gtvideo.sv:17](../rtl/gtvideo.sv:17)); doubling gives 908 × 524 at
-  28.636 MHz — a custom mode close enough to 640×480 that most displays
-  accept it, and it preserves the native refresh rate rather than resampling
-  to 60.000 Hz.
-- Deliberately *simpler* than SNESTang's 720p + pause-sync approach, and
-  better suited to a project whose fidelity target is raster-honest video
-  ([REQUIREMENTS.md](REQUIREMENTS.md) R3).
-- **Done when:** the built-in boot cart is visible on an HDMI display with no
-  front-end at all.
+Built in `tang/`, driven by `tools/gametank-build-tang`:
+
+| File | Role |
+|---|---|
+| `gametank_tang.sv` | board top — PLL, boot cart, core, video chain, LEDs |
+| `pll_tang.v` | Gowin `PLL` primitive: 50 MHz → clk_sys + 5x TMDS serial |
+| `linedouble.sv` | 908x262 @ ce_pix → 908x524 @ clk_sys |
+| `tmds_encoder.sv` | DVI 1.0 §3.2.2 8b/10b encoder (pure RTL) |
+| `dvi_tx.sv` | 3 data lanes + clock lane: `OSER10` + `TLVDS_OBUF` |
+| `ddr_bram.sv` | 64 KB stand-in speaking the DDRAM protocol (T3 replaces) |
+| `gametank_tang.cst` / `.sdc` | dock pins (DVI TX port 0) and clocks |
+
+The doubler stores the input's own hsync/hblank per dot and replays them,
+so no timing constant is duplicated from `rtl/gtvideo.sv`.
+
+**Measured** (GW5AST-138B, PnR complete, bitstream generated):
+
+| Resource | Usage |
+|---|---|
+| Logic | 5,346 / 138,240 (4%) |
+| Registers | 2,158 / 139,140 (2%) |
+| BSRAM | 117 / 340 (35%) — core 63, boot cart 18 as pROM, DDR stub, line buffer |
+| I/O | 15 / 312, 1 PLL, 3 primary clocks |
+| Fmax (clk_sys) | **54.18 MHz** against the 28.65 MHz constraint |
+| Setup / hold violations | **0 / 0** |
+
+Four findings, all folded into the tree:
+
+1. **The exact console clock is unreachable from this board.** 28.636364 MHz
+   is 50 × 63/110, and that 11 would need IDIV = 11 → Fpfd 4.5 MHz, under the
+   PLL's 19 MHz floor (PnR: PA2078). The closest legal setting is **+331 ppm**
+   (IDIV 2, FBDIV 1, MDIV 34+3/8, ODIV0 6, ODIV1 30 — Fvco 859.375 MHz), i.e.
+   60.21 Hz instead of 60.19 and audio 0.03% sharp. Best integer-only setting
+   is −2268 ppm, kept in `tang/pll_tang.v` as the fallback if fractional-N
+   jitter ever bothers a receiver. For comparison, Sipeed's own 720p reference
+   clock is −337 ppm off.
+2. **Gowin BSRAM has no read-before-write mode** (PnR: PA2122), which is
+   exactly what `mem[a] <= d; q <= mem[a];` describes — the shape used by
+   `vram.sv`, `mainbus.sv` and `acp.sv`. A probe pinned the mapping down:
+
+   | Description | WRITE_MODE |
+   |---|---|
+   | `if (we) m[a]<=d; q<=m[a];` | `2'b10` — **rejected** |
+   | `if (we) begin m[a]<=d; q<=d; end else q<=m[a];` | `2'b01` write-through |
+   | `if (we) m[a]<=d; else q<=m[a];` | `2'b00` no-change |
+
+   `vram.sv` and `acp.sv` now carry write-through variants behind `` `GOWIN ``,
+   `mainbus.sv` a no-change variant; `frame_snapshot.sv` just needed its read
+   split into its own `always_ff`. The difference is only what a port reads on
+   a cycle that writes the same address, which no consumer here uses — the
+   argument `rtl/acp.sv` already makes for its altsyncram NEW_DATA mapping.
+3. **Forward-declared signals silently become 1-bit nets.** `rtl/gametank.sv`
+   declared `g_addr` and friends *after* the instantiation that used them;
+   GowinSynthesis creates an implicit wire and then complains the real
+   declaration is a redeclaration (EX3638) — a silent bus truncation waiting
+   to happen. Those declarations moved above first use.
+4. **`$readmemh` BSRAM init works** — the 32 KB boot cart lands as 18 pROM
+   blocks. **K3 closed.**
+
+Two smaller mechanics worth knowing: GowinSynthesis has no
+`set_option -verilog_define`, so macros come from `tang/gowin_defines.v`
+compiled first; and the OSER10 `RESET` pin is in the serial clock domain, so
+`dvi_tx.sv` retimes the console reset into it, with the crossing declared a
+false path in the `.sdc`.
+
+**Not done:** nothing has been on hardware. Two open items —
+`tools/gametank-build-tang --program` is untested, and STA still reports four
+minimum-pulse-width artifacts on the reset synchronizer's own flops (setup
+and hold are clean; the reported "actual width" is negative, which is a
+modelling artifact rather than a physical pulse).
 
 ### T3 — DDR3 bridge
 
@@ -237,11 +297,11 @@ slots and joystick decode; none of that exists on a Tang.
 
 | # | Item | Mitigation |
 |---|---|---|
-| K1 | ~~SystemVerilog maturity in GowinSynthesis~~ — **closed in T0**: all 16 core files compiled clean, no rewrites | PnR-stage surprises remain possible; re-check when T0's PnR half runs |
+| K1 | ~~SystemVerilog maturity in GowinSynthesis~~ — **closed in T0/T2**: all core files compile, place and route with no rewrites | — |
 | K2 | Registers relying on declaration initializers with no reset — deliberate in [ddr_mux.sv:63](../rtl/ddr_mux.sv:63) and the cart download path | Confirm Gowin emits power-up init values in the bitstream; add resets only if it does not |
-| K3 | `$readmemh` BSRAM init for the 32 KB boot cart (`bootcart.mem`) | Verify in T0; fallback is a generated `.mi` file |
+| K3 | ~~`$readmemh` BSRAM init~~ — **closed in T2**: the boot cart maps to 18 pROM blocks | — |
 | K4 | ~~GRAM port replication~~ — **closed in T1**: GRAM in BSRAM costs 256/340 units, does not fit | DDR3 path retained; no action |
-| K5 | Board unknowns: audio codec, DVI TX topology, reference-clock frequency into the FPGA | Pull the schematics before committing to the clock and audio plans |
+| K5 | ~~Board unknowns: reference clock, DVI TX topology~~ — **resolved for video in T2** (50 MHz on P16; TMDS straight off FPGA pins via TLVDS_OBUF). The audio codec is still unknown | Pull the schematic before wiring the T5 audio path |
 | K6 | Gamepad sourcing on a dock with no USB-host MCU | Decide early — it may motivate the Tang Console 138K instead (below) |
 | K7 | Licensed toolchain blocks synthesis in CI | Accept; Verilator CI is the real gate anyway |
 
@@ -252,15 +312,33 @@ HDMI, gamepad ports, SD) and would erase most of T5 and part of T4. If the
 Mega 138K Pro's PCIe/SFP+/AE350 features are not wanted for this project, the
 Console is the cheaper target for the same FPGA class.
 
-## What does *not* change
+## What changed in `rtl/`, and what did not
 
-- All of `rtl/` except `acp.sv`'s RAM and the PLL.
+T2 could not leave `rtl/` completely untouched. The edits so far:
+
+| File | Edit | Visible to MiSTer / Verilator? |
+|---|---|---|
+| `gametank.sv` | forward declarations moved above first use | no — pure reordering |
+| `frame_snapshot.sv` | scan read split into its own `always_ff` | no — identical semantics |
+| `acp.sv`, `vram.sv`, `mainbus.sv` | Gowin-only RAM write-mode variants behind `` `GOWIN `` | no — the `` `else `` branch is the original text |
+
+Everything else is additive (`tang/`, `tools/gametank-build-tang`).
+
+**The `` `GOWIN `` guards are a debt, not a design.** They exist because the
+Verilator suite cannot be run on the machine doing the port, so the safe move
+was to leave the simulated RTL bit-identical. Once the suite runs green
+against the write-through forms, collapse each guard to a single description —
+otherwise the tests are validating RTL that the Tang bitstream does not
+contain.
+
+Unchanged:
+
 - All of `sim/` — harness, waivers, every test, and the lockstep emulator
   comparison. Any RTL edit made for Gowin must keep them green; that is the
-  porting contract.
+  porting contract, and it is currently **unverified for the T2 edits**.
 - [HARDWARE.md](HARDWARE.md) and [REQUIREMENTS.md](REQUIREMENTS.md) fidelity
-  targets. A BSRAM-resident GRAM (T1) would *remove* documented deviations,
-  never add any.
+  targets, with one hardware-imposed exception now recorded: the console
+  clock runs +331 ppm fast on this board (see T2).
 
 ## Sources
 

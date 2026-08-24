@@ -37,10 +37,12 @@ logic        copying;
 logic        write_valid;
 logic [13:0] write_addr;
 
-always_ff @(posedge clk) begin
-    // Same one-clock synchronous-read shape as VRAM's original video port.
-    scan_data <= mem[scan_addr];
+// Read-only scan port, kept in its own block so the write port below is
+// unambiguously write-only (Gowin maps the pair to one dual-port BSRAM).
+// Same one-clock synchronous-read shape as VRAM's video port.
+always_ff @(posedge clk) scan_data <= mem[scan_addr];
 
+always_ff @(posedge clk) begin
     if (write_valid)
         mem[write_addr] <= source_data;
 

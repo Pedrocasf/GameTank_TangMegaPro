@@ -119,6 +119,23 @@ wire        ram_sel  = (cpu_ab[15:13] == 3'b000);
 wire [14:0] ram_addr = {banking[7:6], cpu_ab[12:0]};
 logic [7:0] ram_q;
 
+// Gowin's BSRAM has no read-before-write mode (PnR: PA2122), so the Tang
+// build describes this port as write-through instead. The difference is
+// only what the read output shows on a cycle that writes the same address,
+// which no consumer here reads — the same argument rtl/acp.sv makes for its
+// altsyncram NEW_DATA mapping. Kept behind `GOWIN` so the MiSTer build and
+// the Verilator suite see bit-identical RTL until the suite can confirm the
+// two forms are interchangeable (docs/PORTING_TANG.md §T2).
+`ifdef GOWIN
+always_ff @(posedge clk_sys) begin
+    if (cpu_ce) begin
+        if (ram_sel && cpu_we)
+            sysram[ram_addr] <= cpu_do;
+        else
+            ram_q <= sysram[ram_addr];
+    end
+end
+`else
 always_ff @(posedge clk_sys) begin
     if (cpu_ce) begin
         if (ram_sel && cpu_we)
@@ -126,6 +143,7 @@ always_ff @(posedge clk_sys) begin
         ram_q <= sysram[ram_addr];
     end
 end
+`endif
 
 // VDMA window $4000-$7FFF. Address/data latch at the strobe; write pulses
 // land one clock later, aligned with the latched values (cpu_do changes
