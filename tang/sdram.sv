@@ -137,15 +137,6 @@ localparam logic [3:0] CMD_MRS     = 4'b0000;
 localparam int BEAT_BITS = 22;             // 4M beats = 32 MB
 localparam int MAX_BEATS = 8;
 
-function automatic logic [8:0]  col_of (input logic [BEAT_BITS-1:0] b);
-    col_of = {b[6:0], 2'b00};
-endfunction
-function automatic logic [12:0] row_of (input logic [BEAT_BITS-1:0] b);
-    row_of = b[19:7];
-endfunction
-function automatic logic [1:0]  bank_of(input logic [BEAT_BITS-1:0] b);
-    bank_of = b[21:20];
-endfunction
 
 // ===========================================================================
 // Bus side (clk_bus): accept one transaction, hand it to the engine, then play
@@ -162,9 +153,9 @@ logic [7:0]           req_be;
 logic                 req_we;
 
 typedef enum logic [1:0] { BUS_IDLE, BUS_RUN, BUS_PLAY, BUS_DONE } bus_state_t;
-bus_state_t bus_st = BUS_IDLE;
+bus_state_t bus_st;
 
-logic [3:0] play_idx;
+logic [2:0] play_idx;
 
 wire [28:0] local_word = addr - BASE_WORD;
 
@@ -218,11 +209,11 @@ always_ff @(posedge clk_bus) begin
         BUS_PLAY: begin
             dout       <= beatbuf[play_idx];
             dout_ready <= 1'b1;
-            if (play_idx == req_beats - 4'd1) begin
+            if ({1'b0, play_idx} == req_beats - 4'd1) begin
                 req    <= 1'b0;
                 bus_st <= BUS_DONE;
             end
-            else play_idx <= play_idx + 4'd1;
+            else play_idx <= play_idx + 3'd1;
         end
 
         // Wait for the engine to see req drop, so one command can never be
@@ -253,6 +244,11 @@ logic [BEAT_BITS-1:0] beat;
 logic [3:0]           beats_left;
 logic                 doing_write;
 
+// The address mapping described above, off the beat being worked on.
+wire [8:0]  beat_col  = {beat[6:0], 2'b00};
+wire [12:0] beat_row  = beat[19:7];
+wire [1:0]  beat_bank = beat[21:20];
+
 logic [4:0] wait_cnt;
 logic [1:0] wr_word;
 
@@ -260,7 +256,7 @@ logic [1:0] wr_word;
 // cycles later and enables four capture cycles.
 logic [RD_PIPE-1:0] rd_mark;
 logic [2:0]         cap_cnt;
-logic [3:0]         cap_beat;
+logic [2:0]         cap_beat;
 logic [1:0]         cap_word;
 
 // A PRECHARGE while read data is still on the way would truncate the burst.
@@ -270,7 +266,7 @@ typedef enum logic [3:0] {
     S_INIT_WAIT, S_INIT_REF, S_INIT_MRS, S_INIT_DONE,
     S_IDLE, S_PRE, S_ACT, S_RW, S_BURST, S_FINISH
 } eng_state_t;
-eng_state_t st = S_INIT_WAIT;
+eng_state_t st;
 
 logic req_q;
 wire  req_seen = req_q && (st == S_IDLE) && !ack;
@@ -319,7 +315,7 @@ always_ff @(posedge clk_sdram) begin
             cap_cnt <= cap_cnt - 3'd1;
             if (cap_word == 2'd3) begin
                 cap_word <= 2'd0;
-                cap_beat <= cap_beat + 4'd1;
+                cap_beat <= cap_beat + 3'd1;
             end
             else cap_word <= cap_word + 2'd1;
         end
@@ -395,8 +391,8 @@ always_ff @(posedge clk_sdram) begin
         // Covers the first beat and a burst crossing a row boundary alike.
         S_PRE: begin
             if (wait_cnt == 5'd0 && !rd_inflight) begin
-                if (row_open && (open_row  != row_of(beat) ||
-                                 open_bank != bank_of(beat))) begin
+                if (row_open && (open_row  != beat_row ||
+                                 open_bank != beat_bank)) begin
                     cmd      <= CMD_PRE;
                     sd_a     <= 13'h400;
                     row_open <= 1'b0;
@@ -409,10 +405,10 @@ always_ff @(posedge clk_sdram) begin
         S_ACT: begin
             if (wait_cnt == 5'd0) begin
                 cmd       <= CMD_ACTIVE;
-                sd_ba     <= bank_of(beat);
-                sd_a      <= row_of(beat);
-                open_row  <= row_of(beat);
-                open_bank <= bank_of(beat);
+                sd_ba     <= beat_bank;
+                sd_a      <= beat_row;
+                open_row  <= beat_row;
+                open_bank <= beat_bank;
                 row_open  <= 1'b1;
                 wait_cnt  <= W_RCD;
                 st        <= S_RW;
@@ -421,9 +417,9 @@ always_ff @(posedge clk_sdram) begin
 
         S_RW: begin
             if (wait_cnt == 5'd0) begin
-                sd_ba     <= bank_of(beat);
+                sd_ba     <= beat_bank;
                 sd_a      <= 13'd0;
-                sd_a[8:0] <= col_of(beat);        // A10 = 0: keep the row open
+                sd_a[8:0] <= beat_col;        // A10 = 0: keep the row open
                 if (doing_write) begin
                     cmd     <= CMD_WRITE;
                     dq_oe   <= 1'b1;
@@ -475,6 +471,10 @@ always_ff @(posedge clk_sdram) begin
                 end
             end
         end
+
+        // Unreachable encodings: start over rather than sit in a state with
+        // no exit.
+        default: st <= S_INIT_WAIT;
         endcase
     end
 end

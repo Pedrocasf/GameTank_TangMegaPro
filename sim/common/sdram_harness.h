@@ -89,6 +89,18 @@ public:
     uint64_t refreshes = 0;
     uint64_t reads = 0, writes = 0, activates = 0;
 
+    // Set SDRAM_TRACE=1 to dump every command the controller issues.
+    bool trace = std::getenv("SDRAM_TRACE") != nullptr;
+
+    static const char* cmdName(uint8_t c) {
+        switch (c) {
+        case SD_NOP: return "NOP";     case SD_ACTIVE:  return "ACTIVE";
+        case SD_READ: return "READ";   case SD_WRITE:   return "WRITE";
+        case SD_PRE: return "PRE";     case SD_REFRESH: return "REFRESH";
+        case SD_MRS: return "MRS";     default:         return "?";
+        }
+    }
+
     static uint32_t cell(int bank, int row, int col) {
         return ((uint32_t)bank << 22) | ((uint32_t)row << 9) | (uint32_t)col;
     }
@@ -114,6 +126,11 @@ public:
         }
 
         if ((p.cmd & 0b1000) != 0) return;   // cs_n high: deselect
+
+        if (trace && p.cmd != SD_NOP)
+            std::printf("[%5llu] %-7s ba=%d a=%04x dqm=%x dq=%04x\n",
+                        (unsigned long long)e, cmdName(p.cmd), p.ba, p.a,
+                        p.dqm, p.dq);
 
         switch (p.cmd) {
         case SD_NOP:
@@ -225,6 +242,9 @@ private:
         uint16_t val  = old;
         if (!(p.dqm & 1)) val = (uint16_t)((val & 0xFF00) | (p.dq & 0x00FF));
         if (!(p.dqm & 2)) val = (uint16_t)((val & 0x00FF) | (p.dq & 0xFF00));
+        if (trace)
+            std::printf("        write cell %08x <= %04x (dqm %x, was %04x)\n",
+                        a, val, p.dqm, old);
         mem[a] = val;
         wrLeft--;
     }
@@ -276,16 +296,24 @@ public:
 
         if (busEdge && top.dout_ready) beats.push_back(top.dout);
 
-        chip.edge(p, sdcycle);
+        // While the controller is held in reset its command pins mean
+        // nothing (power-up state decodes as MRS), exactly as on a board
+        // where the part is still in its power-up pause.
+        if (!top.reset) chip.edge(p, sdcycle);
         chip.releaseEdge(sdcycle);
         sdcycle++;
     }
 
     void run(int sdramCycles) { for (int i = 0; i < sdramCycles; i++) sdramEdge(); }
 
-    // Advance to (and through) the next bus edge.
+    // Exactly one bus edge per call. The naive "run until the phase wraps"
+    // version can finish without ever producing one, depending on where the
+    // SDRAM phase happens to sit — which silently breaks any handshake timed
+    // against it.
     void busTick() {
-        do { sdramEdge(); } while (sdcycle % 3 != 0);
+        while (sdcycle % 3 != 0) sdramEdge();   // align to the bus edge
+        sdramEdge();                            // the bus edge itself
+        while (sdcycle % 3 != 0) sdramEdge();   // finish the bus period
     }
 
     void reset() {

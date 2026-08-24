@@ -10,6 +10,11 @@
 
 #include "sdram_harness.h"
 
+// Some Verilator builds still emit the legacy time hook from verilated.cpp
+// (the oss-cad-suite Windows package does); defining it costs nothing on the
+// builds that do not.
+double sc_time_stamp() { return 0; }
+
 // Beat addresses are 64-bit word indices above the base the core uses.
 static constexpr uint32_t BASE = 0x0600'0000;
 
