@@ -68,12 +68,18 @@ assign tmds_d_n   = ~{ch2[0], ch1[0], ch0[0]};
 
 `else
 
-// The serializers' RESET pin is sampled in the clk_serial domain, but `reset`
-// is generated against clk_pix — an unsynchronized crossing that PnR flags
-// (and that could release the lanes on different serial clocks, shifting one
-// lane's bit phase). Retime it here.
+// Retime the reset before it reaches the serializers, and do it on the pixel
+// clock rather than the serial one. Both matter:
+//   - all three lanes take RESET from the same flop, so they leave reset
+//     together and no lane's 10-bit boundary ends up shifted;
+//   - on the serial clock there is only one serial period (2.3 ns at
+//     1366x768 rates) for the release to reach three distributed OSER10s,
+//     which does not close. On the pixel clock there are five.
+// The release itself is asynchronous by nature, so the .sdc excludes these
+// paths from analysis; what it cannot do is make three lanes agree, which is
+// what the single source flop is for.
 logic [1:0] rst_ser;
-always_ff @(posedge clk_serial) rst_ser <= {rst_ser[0], reset};
+always_ff @(posedge clk_pix) rst_ser <= {rst_ser[0], reset};
 wire ser_reset = rst_ser[1];
 
 wire [2:0] ser_q;

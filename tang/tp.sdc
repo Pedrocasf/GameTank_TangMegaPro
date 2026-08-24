@@ -15,3 +15,7 @@ set_clock_groups -asynchronous -group [get_clocks {clk}] -group [get_clocks {clk
 // The reset lands on the serializer synchronizer from the pixel domain; its
 // first stage is an intentional asynchronous crossing.
 set_false_path -to [get_regs {dvi/rst_ser*}]
+
+// ...and out of it into the serializers: an asynchronous reset release,
+// held for thousands of cycles, which no setup window describes.
+set_false_path -from [get_regs {dvi/rst_ser*}]

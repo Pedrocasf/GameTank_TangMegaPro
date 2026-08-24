@@ -32,9 +32,11 @@
     } while (0)
 
 // Output raster (tang/fbuf_display.sv)
-static constexpr int H_ACT = 640, H_FP = 16, H_SY = 96, H_TOT = 800;
-static constexpr int V_ACT = 480, V_FP = 10, V_SY = 2,  V_TOT = 525;
-static constexpr int V_PAD = (V_ACT - 128 * 3) / 2;
+static constexpr int H_ACT = 1024, H_FP = 24, H_SY = 136, H_TOT = 1344;
+static constexpr int V_ACT = 768,  V_FP = 3,  V_SY = 6,   V_TOT = 806;
+static constexpr int SCALE = 6;
+static constexpr int H_PIC = 128 * SCALE;
+static constexpr int H_PAD = (H_ACT - H_PIC) / 2;
 
 // The palette is not in this path: gtvideo emits RGB from its own table, so
 // the test compares against what gtvideo actually produced for each source
@@ -108,7 +110,7 @@ int main() {
         }
     };
 
-    for (long p = 0; p < 8000000L && frames < 5; p++) {
+    for (long p = 0; p < 30000000L && frames < 5; p++) {
         acc += SYS_INC;
         while (acc >= PIX_INC) { acc -= PIX_INC; sys_tick(p); }
 
@@ -184,11 +186,10 @@ int main() {
         size_t run_len = i - run_start;
         if ((int)run_len != H_ACT) continue;      // partial run at a capture edge
         active_line++;
-        int sy_line = active_line - V_PAD;
-        if (sy_line < 0 || sy_line >= 384) continue;
-        int sy = sy_line / 3;
-        for (size_t k = 0; k < run_len; k++) {
-            int sx = (int)(k / 5);
+        if (active_line >= V_ACT) continue;
+        int sy = active_line / SCALE;
+        for (size_t k = H_PAD; k < (size_t)(H_PAD + H_PIC); k++) {
+            int sx = (int)((k - H_PAD) / SCALE);
             const Rgb& e = expect[(sy << 7) | sx];
             if (!e.seen) continue;
             const Sample& o = out[run_start + k];
@@ -234,12 +235,11 @@ int main() {
                     while (j < out.size() && out[j].de) j++;
                     if ((int)(j - rs) != H_ACT) continue;
                     al++;
-                    int syl = al - V_PAD;
-                    if (syl < 0 || syl >= 384) continue;
-                    int sy = syl / 3 + dy;
+                    if (al >= V_ACT) continue;
+                    int sy = al / SCALE + dy;
                     if (sy < 0 || sy > 127) continue;
-                    for (size_t k = 0; k < (size_t)H_ACT; k++) {
-                        int sx = (int)(k / 5) + dx;
+                    for (size_t k = H_PAD; k < (size_t)(H_PAD + H_PIC); k++) {
+                        int sx = (int)((k - H_PAD) / SCALE) + dx;
                         if (sx < 0 || sx > 127) continue;
                         const Rgb& e = expect[(sy << 7) | sx];
                         if (!e.seen) continue;

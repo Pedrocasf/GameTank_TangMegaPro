@@ -190,10 +190,19 @@ of which any amount of building would have surfaced.
    native raster cannot be sent to a sink, and a line doubler cannot fix it —
    the console's line and frame rates are its own.
 
+5. **The link has a speed ceiling.** 1366x768 (85.5 MHz pixel, 427.5 MHz
+   serial, 855 Mbps/lane) produced green artefacts — bit errors on TMDS
+   channel 1 — while the fitter reported timing met. 486tang demonstrates
+   742 Mbps at 720p with the same emulated-LVDS buffers, so treat that as the
+   practical ceiling. The display runs **1024x768@60** (65 MHz, 325 MHz
+   serial, **650 Mbps**), which also lands on 65.000 MHz exactly:
+   Fvco = 50 x 19.5 = 975, /3 serial, /5 pixel, zero frequency error.
+
 That last one changed the architecture. `tang/linedouble.sv` is out of the
 video path, replaced by [tang/fbuf_display.sv](../tang/fbuf_display.sv): a
 128x128 frame store in BRAM, written from the console's raster and read at
-640x480@60 with 5x horizontal (128 x 5 = 640 exactly) and 3x vertical scaling.
+1024x768@60, scaled 6x in both axes (128 x 6 = 768). The picture fills the
+height, is centred with 128 black columns each side, and has square pixels.
 That is the small version of what 486tang does with `ddr3_framebuffer` and
 MiSTer with ascal — the console keeps its cycle-honest internal timing, and
 the display gets a mode it accepts.
@@ -219,8 +228,9 @@ console's write: inherent to a single-buffered store at two unrelated frame
 rates, and bounded by the test at 12 rows of 128, which a mapping regression
 (30-96% of pixels, every row) cannot slip through.
 
-Remaining polish: pixels are 5:3 rather than 4:3, and the picture is
-letterboxed into 384 of 480 lines. Both are scaler choices, not faults.
+Remaining polish: the picture is pillarboxed into 768 of 1024 columns, which
+is what integer scaling of a square 128x128 framebuffer gives. Filling the
+width would mean non-integer scaling or a different mode.
 
 ### T2 — build detail
 

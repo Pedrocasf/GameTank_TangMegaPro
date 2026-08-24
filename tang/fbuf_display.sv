@@ -17,11 +17,20 @@
 //  starting at its line 16; counting from the sync edges recovers (x, y)
 //  without touching the core.
 //
-//  Read side (clk_pix): 640x480@60, with the image scaled 5x horizontally
-//  (128 * 5 = 640 exactly) and 3x vertically (384 lines), centred with black
-//  bars. Integer scaling in both axes, so no resampling and no filtering.
-//  The 5:3 pixel shape is wider than the console's 4:3 output; correcting
-//  that is a scaler question for later, not a bring-up one.
+//  Read side (clk_pix): 1024x768@60 (VESA DMT: 65 MHz, 1344 x 806), with the
+//  image scaled 6x in both axes. 128 * 6 = 768, so the picture is exactly as
+//  tall as the active area and square on the screen — one console pixel is a
+//  6x6 block, no resampling and no filtering. Horizontally it is centred with
+//  (1024 - 768) / 2 = 128 black columns each side.
+//
+//  The mode is chosen for the link, not just the geometry. 1366x768 was tried
+//  first and produced green artefacts: at 85.5 MHz the serial clock is
+//  427.5 MHz, i.e. 855 Mbps per lane, above the 742 Mbps that
+//  Pedrocasf/486tang demonstrates at 720p on this board with the same
+//  emulated-LVDS buffers — channel 1 was taking bit errors. 65 MHz needs
+//  325 MHz serial, 650 Mbps, comfortably inside that. The PLL also lands on
+//  65.000 MHz exactly (Fvco 975 = 50 * 19.5, /3 /5), so there is no frequency
+//  error at all.
 //
 //  The two rasters are asynchronous, so a frame can tear if the console
 //  repaints while the display is reading it. The core already snapshots its
@@ -145,31 +154,33 @@ end
 //   H: 640 active, 16 front, 96 sync, 48 back = 800
 //   V: 480 active, 10 front,  2 sync, 33 back = 525
 // ---------------------------------------------------------------------------
-localparam int H_ACT = 640, H_FP = 16, H_SY = 96, H_TOT = 800;
-localparam int V_ACT = 480, V_FP = 10, V_SY = 2,  V_TOT = 525;
-localparam int V_PAD = (V_ACT - 128 * 3) / 2;      // 48 black lines each side
+localparam int H_ACT = 1024, H_FP = 24, H_SY = 136, H_TOT = 1344;
+localparam int V_ACT = 768,  V_FP = 3,  V_SY = 6,   V_TOT = 806;
+localparam int SCALE = 6;                          // one pixel -> 6x6 block
+localparam int H_PIC = 128 * SCALE;                // 768 wide
+localparam int H_PAD = (H_ACT - H_PIC) / 2;        // 128 black columns a side
 
-logic [9:0] hx, vy;
+logic [10:0] hx, vy;
 
 always_ff @(posedge clk_pix) begin
     if (pix_reset) begin
         hx <= '0;
         vy <= '0;
     end
-    else if (hx == H_TOT[9:0] - 10'd1) begin
+    else if (hx == H_TOT[10:0] - 11'd1) begin
         hx <= '0;
-        vy <= (vy == V_TOT[9:0] - 10'd1) ? '0 : vy + 10'd1;
+        vy <= (vy == V_TOT[10:0] - 11'd1) ? '0 : vy + 11'd1;
     end
-    else hx <= hx + 10'd1;
+    else hx <= hx + 11'd1;
 end
 
-wire in_pic = (hx < H_ACT[9:0]) &&
-              (vy >= V_PAD[9:0]) && (vy < V_PAD[9:0] + 10'd384);
+wire in_pic = (hx >= H_PAD[10:0]) && (hx < H_PAD[10:0] + H_PIC[10:0]) &&
+              (vy < V_ACT[10:0]);
 
-// hx / 5 and (vy - V_PAD) / 3, without dividers: both counters just advance.
+// (hx - H_PAD) / 6 and vy / 6, as counters rather than dividers.
 logic [2:0] hsub;
 logic [6:0] rx;
-logic [1:0] vsub;
+logic [2:0] vsub;
 logic [6:0] ry;
 
 always_ff @(posedge clk_pix) begin
@@ -177,26 +188,25 @@ always_ff @(posedge clk_pix) begin
         hsub <= '0; rx <= '0; vsub <= '0; ry <= '0;
     end
     else begin
-        if (hx == H_TOT[9:0] - 10'd1) begin
+        if (hx == H_TOT[10:0] - 11'd1) begin
             hsub <= '0;
             rx   <= '0;
-            if (vy == V_TOT[9:0] - 10'd1) begin
+            if (vy == V_TOT[10:0] - 11'd1) begin
                 vsub <= '0;
                 ry   <= '0;
             end
-            // The three lines of a source row are vy = V_PAD+3k .. +3k+2, so
-            // the sub-counter has to start its run *on* the first picture
-            // line, not the one before it.
-            else if (vy >= V_PAD[9:0] && vy < V_PAD[9:0] + 10'd384) begin
-                if (vsub == 2'd2) begin
+            // The six lines of a source row are vy = 6k .. 6k+5, so the
+            // sub-counter runs on the picture lines themselves.
+            else if (vy < V_ACT[10:0]) begin
+                if (vsub == SCALE[2:0] - 3'd1) begin
                     vsub <= '0;
                     ry   <= ry + 7'd1;
                 end
-                else vsub <= vsub + 2'd1;
+                else vsub <= vsub + 3'd1;
             end
         end
-        else if (hx < H_ACT[9:0] - 10'd1) begin
-            if (hsub == 3'd4) begin
+        else if (hx >= H_PAD[10:0] && hx < H_PAD[10:0] + H_PIC[10:0] - 11'd1) begin
+            if (hsub == SCALE[2:0] - 3'd1) begin
                 hsub <= '0;
                 rx   <= rx + 7'd1;
             end
@@ -210,11 +220,11 @@ always_ff @(posedge clk_pix) q <= fb[{ry, rx}];
 
 logic de_q, hs_q, vs_q, pic_q;
 always_ff @(posedge clk_pix) begin
-    hs_q  <= (hx >= H_ACT[9:0] + H_FP[9:0]) &&
-             (hx <  H_ACT[9:0] + H_FP[9:0] + H_SY[9:0]);
-    vs_q  <= (vy >= V_ACT[9:0] + V_FP[9:0]) &&
-             (vy <  V_ACT[9:0] + V_FP[9:0] + V_SY[9:0]);
-    de_q  <= (hx < H_ACT[9:0]) && (vy < V_ACT[9:0]);
+    hs_q  <= (hx >= H_ACT[10:0] + H_FP[10:0]) &&
+             (hx <  H_ACT[10:0] + H_FP[10:0] + H_SY[10:0]);
+    vs_q  <= (vy >= V_ACT[10:0] + V_FP[10:0]) &&
+             (vy <  V_ACT[10:0] + V_FP[10:0] + V_SY[10:0]);
+    de_q  <= (hx < H_ACT[10:0]) && (vy < V_ACT[10:0]);
     pic_q <= in_pic;
 end
 

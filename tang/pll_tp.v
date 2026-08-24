@@ -14,8 +14,14 @@
 //  59.9 Hz frame rate, well inside what any sink accepts.
 //============================================================================
 
-module pll_tp
-(
+module pll_tp #(
+    // Defaults are VGA 640x480@60 (the bring-up pattern). The console display
+    // overrides them; see tang/fbuf_display.sv for the mode it drives.
+    //   Fvco = 50 * (MDIV + MDIV_FRAC/8),  serial = Fvco / ODIV0,  pix = /5
+    parameter int MDIV      = 25,
+    parameter int MDIV_FRAC = 1,
+    parameter int ODIV0     = 10
+)(
     input  wire clkin,          // 50 MHz board clock
     output wire clk_pix,        // 25.125 MHz
     output wire clk_serial,     // 125.625 MHz
@@ -81,9 +87,9 @@ PLL pll_inst
 defparam pll_inst.FCLKIN = "50";
 defparam pll_inst.IDIV_SEL = 1;
 defparam pll_inst.FBDIV_SEL = 1;
-defparam pll_inst.MDIV_SEL = 25;
-defparam pll_inst.MDIV_FRAC_SEL = 1;
-defparam pll_inst.ODIV0_SEL = 10;
+defparam pll_inst.MDIV_SEL = MDIV;
+defparam pll_inst.MDIV_FRAC_SEL = MDIV_FRAC;
+defparam pll_inst.ODIV0_SEL = ODIV0;
 defparam pll_inst.ODIV0_FRAC_SEL = 0;
 defparam pll_inst.ODIV1_SEL = 8;
 defparam pll_inst.ODIV2_SEL = 8;

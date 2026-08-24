@@ -68,7 +68,11 @@ pll_tang pll
 // two (see its header). clk_serial from the console PLL is now unused.
 wire clk_pix, clk_pix_serial, pix_lock;
 
-pll_tp pll_pix
+// 1024x768@60 (DMT): Fvco = 50 * 19.5 = 975 MHz, serial = /3 = 325 MHz,
+// pixel = /5 = 65.000 MHz — the nominal rate exactly. 650 Mbps per lane,
+// inside what these emulated-LVDS buffers are known to carry; 1366x768 at
+// 855 Mbps was not (green artefacts on channel 1).
+pll_tp #(.MDIV(19), .MDIV_FRAC(4), .ODIV0(3)) pll_pix
 (
     .clkin      (clk),
     .clk_pix    (clk_pix),
