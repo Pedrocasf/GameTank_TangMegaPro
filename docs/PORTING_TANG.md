@@ -4,7 +4,7 @@ Feasibility study (2026-08-23) for retargeting this core from the MiSTer
 (DE10-Nano, Cyclone V + HPS) to the Sipeed Tang Mega 138K Pro Dock
 (Gowin GW5AST-138, no HPS).
 
-**Status: T0, T1, T2 done; T3 in progress (2026-08-23/24).** The core synthesizes
+**Status: T0, T1 done; T2 verified on hardware; T3 in progress (2026-08-23/24).** The core synthesizes
 clean under GowinSynthesis; GRAM stays in DDR3; and the video top in `tang/`
 places, routes and generates a bitstream with zero setup/hold violations.
 Nothing has run on real hardware yet. Everything from T3 onward is still
@@ -168,7 +168,62 @@ unknown (the toolchain) is answered on day one.
   "Resolved: GRAM stays in DDR3" above. `gram_ddr.sv` is not going away, so
   T3 is the next real milestone.
 
-### T2 — Video out ✅ (2026-08-24)
+### T2 — Video out ✅ on hardware (2026-08-24)
+
+**The console's picture is on a display**: the boot cart's pad indicators,
+stable and in the right place. Getting there took four bring-up findings, none
+of which any amount of building would have surfaced.
+
+1. **`IO_TYPE=LVCMOS33D` has to be stated.** Left unspecified, the fitter picks
+   a 2.5 V standard — `LVDS25` for `TLVDS_OBUF`, `LVDS25E` for `ELVDS_OBUF` —
+   on a bank the board runs at 3.3 V. Nothing errors; the link is simply dead.
+   `p` and `n` also get their own `IO_LOC`. Both per Pedrocasf/486tang's
+   `src/boards/mega_pro.cst`, which carries the same pins this port uses.
+2. **The clock lane is not serialized.** The pixel clock drives the fourth
+   `ELVDS_OBUF` directly, as in 486tang's `ddr3_framebuffer.v`.
+3. **The pixel clock must come from `CLKDIV`, not a second PLL output.**
+   `OSER10` needs PCLK and FCLK phase-related; two output dividers can leave
+   lock in any of five alignments.
+4. **This display will not lock to the console's native raster.** Proved with
+   `gw_sh tang/syn.tcl tp`, a colour-bar generator sharing the same TMDS path:
+   bars at 640x480@60, nothing at the console's 908x524 @ 60.2 Hz. So the
+   native raster cannot be sent to a sink, and a line doubler cannot fix it —
+   the console's line and frame rates are its own.
+
+That last one changed the architecture. `tang/linedouble.sv` is out of the
+video path, replaced by [tang/fbuf_display.sv](../tang/fbuf_display.sv): a
+128x128 frame store in BRAM, written from the console's raster and read at
+640x480@60 with 5x horizontal (128 x 5 = 640 exactly) and 3x vertical scaling.
+That is the small version of what 486tang does with `ddr3_framebuffer` and
+MiSTer with ascal — the console keeps its cycle-honest internal timing, and
+the display gets a mode it accepts.
+
+**Simulation earned its keep here.** Three bugs in that path were found in
+Verilator, not on the bench, and each looked identical on screen:
+
+| Bug | Symptom |
+|---|---|
+| Line counter reset needed hsync and vsync in the same cycle, which never happens | rows advanced from the wrong place — the *unstable* in "unstable grey boxes" |
+| Vertical read phase started a line early | one output line in three showed the neighbouring row |
+| Picture start taken as 220 dots after hsync; `gtvideo` puts it at **188** (hsync at clk 128 = dot 64, pixel k at clk 504+10k = dot 252+5k) | sampler ran off the picture near column 124 and stored border and blanking |
+
+[sim/unit/test_fbuf_display.cpp](../sim/unit/test_fbuf_display.cpp) drives the
+real `rtl/gtvideo.sv` into the frame store through a test-only wrapper, so the
+coordinate reconstruction is checked against the generator rather than a C++
+restatement of the same assumptions — which is what let it catch a constant
+both sides had wrong. It reports the best-matching (dx, dy) alignment and
+which rows and columns disagree.
+
+The residual is a band of a few rows where the display's read crosses the
+console's write: inherent to a single-buffered store at two unrelated frame
+rates, and bounded by the test at 12 rows of 128, which a mapping regression
+(30-96% of pixels, every row) cannot slip through.
+
+Remaining polish: pixels are 5:3 rather than 4:3, and the picture is
+letterboxed into 384 of 480 lines. Both are scaler choices, not faults.
+
+### T2 — build detail
+
 
 Built in `tang/`, driven by `tools/gametank-build-tang`:
 

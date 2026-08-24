@@ -15,7 +15,7 @@
 //    - gamepads    : tied off (T5)
 //    - audio       : not routed off-chip yet (T5)
 //
-//  Video path: rtl/gtvideo.sv raster -> tang/linedouble.sv -> tang/dvi_tx.sv
+//  Video path: rtl/gtvideo.sv raster -> tang/fbuf_display.sv -> tang/dvi_tx.sv
 //  -> DVI TX port 0 on the dock. See docs/PORTING_TANG.md §T2.
 //============================================================================
 
@@ -62,6 +62,26 @@ pll_tang pll
     .clk_sdram  (clk_sdram),
     .lock       (pll_lock)
 );
+
+// The display runs on its own standard-mode clocks: this monitor will not
+// lock to the console's native raster, so tang/fbuf_display.sv decouples the
+// two (see its header). clk_serial from the console PLL is now unused.
+wire clk_pix, clk_pix_serial, pix_lock;
+
+pll_tp pll_pix
+(
+    .clkin      (clk),
+    .clk_pix    (clk_pix),
+    .clk_serial (clk_pix_serial),
+    .lock       (pix_lock)
+);
+
+logic [7:0] pix_rst_cnt = '0;
+always_ff @(posedge clk_pix) begin
+    if (!pix_lock)            pix_rst_cnt <= '0;
+    else if (!pix_rst_cnt[7]) pix_rst_cnt <= pix_rst_cnt + 1'd1;
+end
+wire pix_reset = ~pix_rst_cnt[7];
 
 // Hold the console in reset until the PLL is locked and settled. The SDRAM
 // needs its 200 us power-up sequence on top of that, so the memory holds the
@@ -239,18 +259,19 @@ gametank gametank
 wire       de_out, hsync_out, vsync_out;
 wire [7:0] r_out, g_out, b_out;
 
-linedouble linedouble
+fbuf_display display
 (
-    .clk       (clk_sys),
+    .clk_sys   (clk_sys),
     .reset     (reset),
     .ce_pix    (ce_pix),
     .hsync_in  (hsync),
-    .hblank_in (hblank),
     .vsync_in  (vsync),
-    .vblank_in (vblank),
     .r_in      (video_r),
     .g_in      (video_g),
     .b_in      (video_b),
+
+    .clk_pix   (clk_pix),
+    .pix_reset (pix_reset),
     .hsync_out (hsync_out),
     .vsync_out (vsync_out),
     .de_out    (de_out),
@@ -261,9 +282,9 @@ linedouble linedouble
 
 dvi_tx dvi
 (
-    .clk_pix    (clk_sys),
-    .clk_serial (clk_serial),
-    .reset      (reset),
+    .clk_pix    (clk_pix),
+    .clk_serial (clk_pix_serial),
+    .reset      (pix_reset),
     .de         (de_out),
     .hsync      (hsync_out),
     .vsync      (vsync_out),

@@ -1,0 +1,1 @@
+`define TP_CONSOLE_MODE 1

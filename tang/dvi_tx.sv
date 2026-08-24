@@ -2,16 +2,29 @@
 //  DVI transmitter: three TMDS-encoded data channels plus the clock channel,
 //  serialized 10:1 and driven out as differential pairs.
 //
-//  clk_serial must be exactly 5x clk_pix (OSER10 does 10 bits per pixel
-//  clock on both edges of the fast clock — UG304 §4.3.5); tang/pll_tang.v
-//  produces the pair from one PLL so they stay phase-related.
+//  clk_serial must be exactly 5x clk_pix, and clk_pix must be *derived* from
+//  it by the CLKDIV in tang/pll_tang.v — OSER10 needs the two in a defined
+//  phase relationship, which two independent PLL outputs do not guarantee.
 //
-//  Encoding is pure RTL in tang/tmds_encoder.sv. This module is the only
-//  place that touches device primitives (OSER10, TLVDS_OBUF), so it is the
-//  one file in the Tang video path that cannot be simulated — the same
-//  boundary the MiSTer build draws around sys/. Under Verilator the
-//  primitives collapse to a behavioural stub that keeps the module
-//  elaboratable.
+//  The output stage follows the arrangement proven on this board by
+//  Pedrocasf/486tang (src/ddr3_framebuffer.v), which matters in three ways
+//  that each produce a dead link when got wrong:
+//
+//    - ELVDS_OBUF, not TLVDS_OBUF. These carriers run the HDMI bank at 3.3 V
+//      and drive TMDS as emulated LVDS through the board's resistor network.
+//    - the constraints must say IO_TYPE=LVCMOS33D explicitly. Left to itself
+//      the fitter picks LVDS25 for TLVDS or LVDS25E for ELVDS — both 2.5 V
+//      standards, on a 3.3 V bank.
+//    - the clock lane is driven straight from the pixel clock, not
+//      serialized. A 1111100000 pattern through a fourth OSER10 makes the
+//      same waveform on paper, and is not what the working design does.
+//
+//  Encoding is pure RTL in tang/tmds_encoder.sv, verified symbol by symbol in
+//  sim/unit/test_tmds_encoder.cpp. This module is the only place in the Tang
+//  video path that touches device primitives, so it is the one file that
+//  cannot be simulated — the same boundary the MiSTer build draws around
+//  sys/. Under Verilator the primitives collapse to a behavioural stub that
+//  keeps the module elaboratable.
 //
 //  Audio is not carried: this is DVI signalling (video islands only), which
 //  every HDMI display accepts. HDMI audio packets are a T5 concern.
@@ -19,8 +32,8 @@
 
 module dvi_tx
 (
-    input  logic        clk_pix,      // 28.636364 MHz
-    input  logic        clk_serial,   // 143.181818 MHz
+    input  logic        clk_pix,      // 28.645833 MHz
+    input  logic        clk_serial,   // 143.229167 MHz
     input  logic        reset,
 
     input  logic        de,
@@ -44,41 +57,36 @@ tmds_encoder enc_b (.clk(clk_pix), .din(b), .ctrl({vsync, hsync}), .de(de), .dou
 tmds_encoder enc_g (.clk(clk_pix), .din(g), .ctrl(2'b00),          .de(de), .dout(ch1));
 tmds_encoder enc_r (.clk(clk_pix), .din(r), .ctrl(2'b00),          .de(de), .dout(ch2));
 
-// The clock channel is a fixed half-rate pattern through the same
-// serializer, so it tracks the data lanes' path delay.
-localparam logic [9:0] CLK_PATTERN = 10'b1111100000;
-
 `ifdef VERILATOR
 
 // Behavioural stub: keeps the module elaboratable in simulation. Serial
 // output timing is not modelled — nothing downstream of the FPGA pins is.
-assign tmds_clk_p = CLK_PATTERN[0];
-assign tmds_clk_n = ~CLK_PATTERN[0];
+assign tmds_clk_p = clk_pix;
+assign tmds_clk_n = ~clk_pix;
 assign tmds_d_p   = {ch2[0], ch1[0], ch0[0]};
 assign tmds_d_n   = ~{ch2[0], ch1[0], ch0[0]};
 
 `else
 
-// The serializers' RESET pin is sampled in the clk_serial domain, but
-// `reset` is generated against clk_sys — an unsynchronized crossing that
-// PnR flags (and that could release the four lanes on different serial
-// clocks, shifting one lane's bit phase). Retime it here.
+// The serializers' RESET pin is sampled in the clk_serial domain, but `reset`
+// is generated against clk_pix — an unsynchronized crossing that PnR flags
+// (and that could release the lanes on different serial clocks, shifting one
+// lane's bit phase). Retime it here.
 logic [1:0] rst_ser;
 always_ff @(posedge clk_serial) rst_ser <= {rst_ser[0], reset};
 wire ser_reset = rst_ser[1];
 
-wire [3:0] ser_q;   // [2:0] = data lanes, [3] = clock lane
+wire [2:0] ser_q;
 
-// Lane 0 = blue/sync, lane 1 = green, lane 2 = red, lane 3 = clock.
-wire [9:0] lane [0:3];
+// Lane 0 = blue/sync, lane 1 = green, lane 2 = red.
+wire [9:0] lane [0:2];
 assign lane[0] = ch0;
 assign lane[1] = ch1;
 assign lane[2] = ch2;
-assign lane[3] = CLK_PATTERN;
 
 genvar i;
 generate
-    for (i = 0; i < 4; i = i + 1) begin : gen_ser
+    for (i = 0; i < 3; i = i + 1) begin : gen_ser
         OSER10 ser
         (
             .Q     (ser_q[i]),
@@ -97,22 +105,15 @@ generate
             .RESET (ser_reset)
         );
     end
-
-    for (i = 0; i < 3; i = i + 1) begin : gen_obuf
-        TLVDS_OBUF obuf
-        (
-            .I  (ser_q[i]),
-            .O  (tmds_d_p[i]),
-            .OB (tmds_d_n[i])
-        );
-    end
 endgenerate
 
-TLVDS_OBUF obuf_clk
+// Four pads in one arrayed instantiation: the clock lane takes the pixel
+// clock directly, the three data lanes take their serializer outputs.
+ELVDS_OBUF tmds_bufds [3:0]
 (
-    .I  (ser_q[3]),
-    .O  (tmds_clk_p),
-    .OB (tmds_clk_n)
+    .I  ({clk_pix,    ser_q}),
+    .O  ({tmds_clk_p, tmds_d_p}),
+    .OB ({tmds_clk_n, tmds_d_n})
 );
 
 `endif

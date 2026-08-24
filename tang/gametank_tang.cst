@@ -27,12 +27,27 @@ IO_PORT "led[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE BANK_VCCIO=3.3;
 IO_PORT "led[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE BANK_VCCIO=3.3;
 IO_PORT "led[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE BANK_VCCIO=3.3;
 
-// DVI TX port 0
-IO_LOC "tmds_d_p[0]" AB24,AC24;
-IO_PORT "tmds_d_p[0]" PULL_MODE=NONE DRIVE=3.5;
-IO_LOC "tmds_d_p[1]" V24,W24;
-IO_PORT "tmds_d_p[1]" PULL_MODE=NONE DRIVE=3.5;
-IO_LOC "tmds_d_p[2]" AA22,AA23;
-IO_PORT "tmds_d_p[2]" PULL_MODE=NONE DRIVE=3.5;
-IO_LOC "tmds_clk_p" Y22,Y23;
-IO_PORT "tmds_clk_p" PULL_MODE=NONE DRIVE=3.5;
+// DVI TX port 0.
+//
+// IO_TYPE is stated explicitly and each half of every pair gets its own
+// IO_LOC, matching the arrangement proven on this board by
+// Pedrocasf/486tang (src/boards/mega_pro.cst). Left to choose, the fitter
+// picks a 2.5 V standard - LVDS25 for TLVDS_OBUF, LVDS25E for ELVDS_OBUF -
+// and this bank runs at 3.3 V, which is a dead link with no error anywhere
+// in the build.
+IO_LOC "tmds_clk_p" Y22;
+IO_PORT "tmds_clk_p" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_clk_n" Y23;
+IO_PORT "tmds_clk_n" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[0]" AB24;
+IO_PORT "tmds_d_p[0]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_n[0]" AC24;
+IO_PORT "tmds_d_n[0]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[1]" V24;
+IO_PORT "tmds_d_p[1]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_n[1]" W24;
+IO_PORT "tmds_d_n[1]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[2]" AA22;
+IO_PORT "tmds_d_p[2]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_n[2]" AA23;
+IO_PORT "tmds_d_n[2]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=8;

@@ -34,3 +34,12 @@ set_clock_groups -asynchronous -group [get_clocks {clk}]                        
 // clk_sdram domain, so naming sources would have to change every time
 // something new gates reset.
 set_false_path -to [get_regs {dvi/rst_ser*}]
+
+// The display runs on a second PLL at standard VGA rates; the console's own
+// raster never leaves the chip now (tang/fbuf_display.sv).
+create_generated_clock -name clk_pix_serial -source [get_ports {clk}] -master_clock clk -divide_by 80 -multiply_by 201 [get_pins {pll_pix/pll_inst/CLKOUT0}]
+create_generated_clock -name clk_pix -source [get_pins {pll_pix/pll_inst/CLKOUT0}] -master_clock clk_pix_serial -divide_by 5 [get_pins {pll_pix/pix_div/CLKOUT}]
+
+// The framebuffer is written on clk_sys and read on clk_pix: that crossing is
+// the point of the frame store, and is not timed as a synchronous transfer.
+set_clock_groups -asynchronous -group [get_clocks {clk_sys clk_serial clk_sdram}] -group [get_clocks {clk_pix clk_pix_serial}]

@@ -4,9 +4,13 @@
 
 set dev_ver "B"
 set use_sdram 0
+set use_tp 0
+set use_conmode 0
 foreach arg $argv {
     if {[string match "*138C*" $arg]} { set dev_ver "C" }
     if {[string match "*sdram*" $arg]} { set use_sdram 1 }
+    if {[string match "*tp*" $arg]} { set use_tp 1 }
+    if {[string match "*conmode*" $arg]} { set use_conmode 1 }
 }
 
 # A build with the SDRAM back end but no pin locations would let the fitter
@@ -25,6 +29,25 @@ if {$dev_ver eq "C"} {
     set_device -name GW5AST-138C GW5AST-LV138FPG676AC1/I0
 } else {
     set_device -name GW5AST-138B GW5AST-LV138FPG676AC1/I0
+}
+
+# The bring-up test pattern shares only the DVI transmitter and the pins.
+if {$use_tp} {
+    if {$use_conmode} {
+        add_file -type verilog tang/tp_console_defines.v
+        add_file -type verilog tang/pll_tang.v
+    }
+    add_file -type verilog tang/tp_top.sv
+    add_file -type verilog tang/pll_tp.v
+    add_file -type verilog tang/dvi_tx.sv
+    add_file -type verilog tang/tmds_encoder.sv
+    add_file -type cst     tang/gametank_tang.cst
+    add_file -type sdc     tang/tp.sdc
+    set_option -top_module tp_top
+    set_option -verilog_std sysv2017
+    set_option -output_base_name gametank_tang
+    run all
+    return
 }
 
 # --- macro definitions (must be first: see the file header) ---
@@ -51,7 +74,8 @@ add_file -type verilog rtl/cpu/ALU.v
 
 # --- Tang board layer ---
 add_file -type verilog tang/gametank_tang.sv
-add_file -type verilog tang/linedouble.sv
+add_file -type verilog tang/fbuf_display.sv
+add_file -type verilog tang/pll_tp.v
 add_file -type verilog tang/tmds_encoder.sv
 add_file -type verilog tang/dvi_tx.sv
 add_file -type verilog tang/ddr_bram.sv
