@@ -76,6 +76,32 @@ module gametank
     output logic [15:0] audio_r
 );
 
+// ---------------------------------------------------------------------------
+// Signals produced further down but consumed by earlier instantiations.
+// They are declared here rather than beside their producer because a forward
+// reference makes GowinSynthesis create an implicit 1-bit net and then reject
+// the real declaration (docs/PORTING_TANG.md §T0) — silently truncating buses
+// like g_addr. Quartus and Verilator accept either order.
+// ---------------------------------------------------------------------------
+logic [7:0]  win_din;
+logic        pad1_rd, pad2_rd;
+logic [7:0]  pad_q;
+logic        via_wen, via_ren /*verilator public_flat_rd*/;
+logic [7:0]  via_shadow_q;
+logic        cart_rd, cart_wr, cart_present;
+logic [7:0]  cart_wdata;
+logic [7:0]  cart_int_data /*verilator public_flat_rd*/;
+logic        g_rd, g_we, g_dout_ready, g_busy;
+logic [28:0] g_addr;
+logic [63:0] g_din;
+logic [7:0]  g_be, g_burstcnt;
+logic        save_trigger;
+logic        sv_active /*verilator public_flat_rd*/, sv_wr;
+logic [20:0] sv_addr;
+logic [7:0]  sv_data;
+logic        vid_page /*verilator public_flat_rd*/;
+logic        vsync_nmi /*verilator public_flat_rd*/;
+
 // Audio coprocessor: unsigned 8-bit DAC level on both channels (AUDIO_S=0
 // in the wrapper); the LM358 low-pass is analog-path polish for M8.
 logic       acp_reset_we, acp_nmi_we, acp_rate_we, aram_we;
@@ -129,7 +155,6 @@ always_ff @(posedge clk_sys) begin
 end
 
 logic [13:0] win_addr /*verilator public_flat_rd*/;
-logic [7:0]  win_din;
 logic        cpu_vram_we, cpu_gram_we, cpu_gram_rd, blit_param_we;
 logic [7:0]  vram_a_dout, gram_b_dout;
 logic [13:0] vram_b_addr;
@@ -184,8 +209,6 @@ mainbus mainbus
 );
 
 // Gamepads
-logic       pad1_rd, pad2_rd;
-logic [7:0] pad_q;
 
 pads pads
 (
@@ -201,7 +224,6 @@ pads pads
 // 6522 VIA at $2800-$2FFF. Its phi2 is the CPU cycle: `falling` = the RDY
 // strobe (end of cycle, when writes commit), `rising` = mid-window. Port A
 // becomes the cartridge bank SPI in M7; until then ports float high.
-logic       via_wen, via_ren /*verilator public_flat_rd*/;
 logic [7:0] via_q;
 logic       via_irq;
 
@@ -215,7 +237,7 @@ logic       via_irq;
 // write-shadow, and via_irq is not raised. The real via6522 remains
 // instantiated underneath so its pin-level behavior stays available.
 logic [7:0] via_shadow [0:15];
-wire  [7:0] via_shadow_q = via_shadow[win_addr[3:0]];
+assign via_shadow_q = via_shadow[win_addr[3:0]];
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         for (int i = 0; i < 16; i++) via_shadow[i] <= 8'h00;
@@ -351,13 +373,6 @@ gram_ddr gram_ddr
 
 // Cartridge controller (M7): DDR3-backed .gtr with VIA Port A bank SPI.
 // Shares the DDRAM port with the GRAM prefetcher through ddr_mux.
-logic        cart_rd, cart_wr, cart_present;
-logic [7:0]  cart_wdata;
-logic [7:0]  cart_int_data /*verilator public_flat_rd*/;
-logic        g_rd, g_we, g_dout_ready, g_busy;
-logic [28:0] g_addr;
-logic [63:0] g_din;
-logic [7:0]  g_be, g_burstcnt;
 logic        k_rd, k_we, k_dout_ready, k_busy;
 logic [28:0] k_addr;
 logic [63:0] k_din;
@@ -406,10 +421,6 @@ cart cart
 // Flash-save persistence (M9.1): $90-triggered save of the DDR3 cart
 // image to the framework's .sav slot; restore replays the mounted file
 // through the cart download port.
-logic        save_trigger;
-logic        sv_active /*verilator public_flat_rd*/, sv_wr;
-logic [20:0] sv_addr;
-logic [7:0]  sv_data;
 logic        s_rd;
 logic [28:0] s_addr;
 logic [7:0]  s_burstcnt;
@@ -514,7 +525,6 @@ vram vram
 // The emulator presents one immutable framebuffer image per host frame.
 // Snapshot the requested hardware page during vblank so a game can flip and
 // immediately recycle the released page without scanout following its writes.
-logic vid_page /*verilator public_flat_rd*/;
 frame_snapshot frame_snapshot
 (
     .clk            (clk_sys),
@@ -530,7 +540,6 @@ frame_snapshot frame_snapshot
     .scan_data      (scanout_data)
 );
 
-logic vsync_nmi /*verilator public_flat_rd*/;
 
 gtvideo gtvideo
 (

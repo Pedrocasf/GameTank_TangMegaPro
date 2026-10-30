@@ -16,6 +16,7 @@
 
 #include <verilated.h>
 #include "Vblitter.h"
+#include "vl_compat.h"
 
 #define CHECK(cond, ...)                                                  \
     do {                                                                  \

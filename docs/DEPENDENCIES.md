@@ -95,6 +95,26 @@ demand, never vendored. Audited 2026-07-06.
 - **License:** GPLv3 (© Sorgelig 2019).
 - **Commit:** recorded at vendoring time (M7).
 
+### Tang board layer (`tang/`) — derived, not vendored (T2, 2026-08-24)
+
+Nothing under `tang/` is copied third-party code, but two files are derived
+from vendor material and are recorded here for provenance:
+
+- `tang/gametank_tang.cst` — pin assignments (50 MHz clock P16, reset K16,
+  LEDs, DVI TX port 0 TMDS pairs) taken as *facts about the board* from
+  Sipeed's dock reference constraints,
+  https://github.com/sipeed/TangMega-138KPro-example
+  (`cam2hdmi_alt/cam2dvi/src/138K_PRO_DOCK.cst`), Apache-2.0. No code copied.
+- `tang/pll_tang.v` — hand-written `PLL` primitive instantiation. The port
+  list and parameter names follow Gowin's IP-generator template shape (the
+  primitive's interface is fixed by the vendor); the divider arithmetic is
+  ours and documented in the file header.
+
+`tang/tmds_encoder.sv` implements the DVI 1.0 §3.2.2 encoding algorithm from
+the specification — no third-party source. `OSER10` and `TLVDS_OBUF` in
+`tang/dvi_tx.sv` are Gowin device primitives (UG304), instantiated the way
+`altsyncram` is in `rtl/acp.sv`.
+
 ## Test infrastructure (cloned on demand, not vendored)
 
 ### GameTankEmulator (reference model)

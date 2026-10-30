@@ -7,7 +7,41 @@
 
 VERILATOR ?= verilator
 
+# ---------------------------------------------------------------------------
+# Host platform. Windows (Git Bash + mingw g++) differs in ways that reach
+# this Makefile:
+#   - executables carry .exe, the emulator the lockstep tests run included;
+#   - SDL2 normally arrives as scoop's MSVC build, whose SDL2main.lib cannot
+#     be linked by mingw (duplicate `main`), so the emulator is built with
+#     SDL_MAIN_HANDLED, without -lSDL2main, and with the companion patch
+#     emulator-patches/windows-sdl-main.patch;
+#   - that SDL2.dll has to be on PATH while the emulator runs.
+# Set SDL_ROOT if SDL2 lives somewhere other than scoop's default.
+# ---------------------------------------------------------------------------
+ifeq ($(OS),Windows_NT)
+EXE           := .exe
+SDL_ROOT      ?= $(subst \,/,$(USERPROFILE))/scoop/apps/sdl2/current
+EMU_INCLUDES  := -Isrc/imgui -Isrc/imgui/backends -Isrc/imgui/ext/implot \
+                 -Isrc/whereami -DSDL_MAIN_HANDLED
+EMU_LDFLAGS   := -lmingw32 -lSDL2 -Wl,-Bstatic -mwindows -lm -ldinput8 \
+                 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lcomdlg32 \
+                 -lole32 -loleaut32 -lshell32 -lversion -luuid -static-libgcc \
+                 -lsetupapi
+EMU_MAKE_VARS := SDL_ROOT="$(SDL_ROOT)" EXTRA_INCLUDES="$(EMU_INCLUDES)" \
+                 LINKER_FLAGS="$(EMU_LDFLAGS)"
+EMU_PATCHES   := lockstep-headless.patch windows-sdl-main.patch
+EMU_RUN_ENV   := PATH="$(SDL_ROOT)/lib:$$PATH"
+else
+EXE           :=
+EMU_MAKE_VARS :=
+EMU_PATCHES   := lockstep-headless.patch
+EMU_RUN_ENV   :=
+endif
+
+EMU_BIN := GameTankEmulator/build/GameTankEmulator$(EXE)
+
 RTL_DIR := $(abspath ../rtl)
+TANG_DIR:= $(abspath ../tang)
 COMMON  := $(abspath common)
 OUT     := out
 
@@ -19,6 +53,11 @@ RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv 
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
 VFLAGS     := --cc --exe --build -j 0 -Wall --assert -O2 --top-module gametank
 VFLAGS_CPU := --cc --exe --build -j 0 -Wno-fatal --x-assign unique --x-initial unique -O2 --top-module cpu_65c02
+# tang/sdram.sv is our own RTL, so it holds to the same -Wall bar as rtl/.
+# CLK_KHZ is scaled down so the 200 us power-up and the 7.8 us refresh
+# interval fit in a unit test (and so refreshes interleave with traffic).
+VFLAGS_SDRAM := --cc --exe --build -j 0 -Wall --assert -O2 --top-module sdram \
+                -GCLK_KHZ=12800
 CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 
 # ---------------------------------------------------------------------------
@@ -26,7 +65,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window sdram tmds_encoder linedouble fbuf_display cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
 INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch frontbuffer_ownership via_shadow
 SYSTEM_TESTS      := game_smoke
 
@@ -72,6 +111,41 @@ $(OUT)/unit_%: unit/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/unit_$*
 	$(VERILATOR) $(VFLAGS) --Mdir obj_dir/unit_$* -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(RTL_SRCS) $(abspath $<)
+
+# The framebuffer display is tested against the real gtvideo through a
+# test-only wrapper, so its coordinate reconstruction is checked against the
+# generator rather than a C++ restatement of it.
+$(OUT)/unit_fbuf_display: unit/test_fbuf_display.cpp common/vl_compat.h \
+                          common/tb_fbuf_display.sv $(TANG_DIR)/fbuf_display.sv \
+                          $(RTL_DIR)/gtvideo.sv $(RTL_DIR)/palette.sv | $(OUT)
+	@mkdir -p obj_dir/unit_fbuf_display
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 \
+		--top-module tb_fbuf_display --Mdir obj_dir/unit_fbuf_display \
+		-CFLAGS "$(CFLAGS)" -o $(abspath $@) $(abspath common/tb_fbuf_display.sv) \
+		$(TANG_DIR)/fbuf_display.sv $(RTL_DIR)/gtvideo.sv $(RTL_DIR)/palette.sv \
+		$(abspath $<)
+
+# The Tang video blocks verilate on their own tops, like the blitter does.
+$(OUT)/unit_linedouble: unit/test_linedouble.cpp common/vl_compat.h \
+                        $(TANG_DIR)/linedouble.sv | $(OUT)
+	@mkdir -p obj_dir/unit_linedouble
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 \
+		--top-module linedouble --Mdir obj_dir/unit_linedouble \
+		-CFLAGS "$(CFLAGS)" -o $(abspath $@) $(TANG_DIR)/linedouble.sv $(abspath $<)
+
+$(OUT)/unit_tmds_encoder: unit/test_tmds_encoder.cpp common/vl_compat.h \
+                          $(TANG_DIR)/tmds_encoder.sv | $(OUT)
+	@mkdir -p obj_dir/unit_tmds_encoder
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 \
+		--top-module tmds_encoder --Mdir obj_dir/unit_tmds_encoder \
+		-CFLAGS "$(CFLAGS)" -o $(abspath $@) $(TANG_DIR)/tmds_encoder.sv $(abspath $<)
+
+# The SDRAM controller is a Tang-port block with its own top and its own
+# harness (a behavioural chip on the pins), so it gets an explicit rule.
+$(OUT)/unit_sdram: unit/test_sdram.cpp common/sdram_harness.h $(TANG_DIR)/sdram.sv | $(OUT)
+	@mkdir -p obj_dir/unit_sdram
+	$(VERILATOR) $(VFLAGS_SDRAM) --Mdir obj_dir/unit_sdram -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(TANG_DIR)/sdram.sv $(abspath $<)
 
 $(OUT)/integration_%: integration/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/integration_$*
@@ -189,18 +263,18 @@ GameTankEmulator/.stamp:
 	git clone -q $(EMU_URL) GameTankEmulator
 	cd GameTankEmulator && git checkout -q $(EMU_COMMIT) && \
 	  git submodule update --init --depth 1 src/mos6502 src/imgui/ext/implot && \
-	  git apply $(abspath emulator-patches/lockstep-headless.patch)
+	  $(foreach p,$(EMU_PATCHES),git apply $(abspath emulator-patches/$(p)) &&) true
 	touch $@
 
-GameTankEmulator/build/GameTankEmulator: GameTankEmulator/.stamp
-	+$(MAKE) -C GameTankEmulator build/GameTankEmulator
+$(EMU_BIN): GameTankEmulator/.stamp
+	+$(MAKE) -C GameTankEmulator build/GameTankEmulator$(EXE) $(EMU_MAKE_VARS)
 
 LOCKSTEP_FRAMES ?= 12
 
-$(OUT)/%.emu_frames.bin: testroms/%.gtr GameTankEmulator/build/GameTankEmulator | $(OUT)
-	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+$(OUT)/%.emu_frames.bin: testroms/%.gtr $(EMU_BIN) | $(OUT)
+	$(EMU_RUN_ENV) SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 	GTE_LOCKSTEP_OUT=$(abspath $@) GTE_LOCKSTEP_FRAMES=$(LOCKSTEP_FRAMES) \
-	  ./GameTankEmulator/build/GameTankEmulator --softrender --nosound --nojoystick \
+	  ./$(EMU_BIN) --softrender --nosound --nojoystick \
 	  $(abspath $<) >/dev/null 2>&1
 
 run-integration-lockstep_fb_pattern: $(OUT)/integration_lockstep_fb_pattern \

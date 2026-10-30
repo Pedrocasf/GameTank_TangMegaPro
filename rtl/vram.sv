@@ -28,11 +28,28 @@ module vram
 
 logic [7:0] mem [0:32767] /*verilator public_flat_rd*/;
 
+// Gowin's BSRAM has no read-before-write mode (PnR: PA2122), so the Tang
+// build describes this port as write-through instead. The difference is
+// only what the read output shows on a cycle that writes the same address,
+// which no consumer here reads — the same argument rtl/acp.sv makes for its
+// altsyncram NEW_DATA mapping. Kept behind `GOWIN` so the MiSTer build and
+// the Verilator suite see bit-identical RTL until the suite can confirm the
+// two forms are interchangeable (docs/PORTING_TANG.md §T2).
+`ifdef GOWIN
+always_ff @(posedge clk) begin
+    if (a_we) begin
+        mem[{a_page, a_addr}] <= a_din;
+        a_dout <= a_din;
+    end
+    else a_dout <= mem[{a_page, a_addr}];
+end
+`else
 always_ff @(posedge clk) begin
     if (a_we)
         mem[{a_page, a_addr}] <= a_din;
     a_dout <= mem[{a_page, a_addr}];
 end
+`endif
 
 always_ff @(posedge clk) begin
     b_dout <= mem[{b_page, b_addr}];

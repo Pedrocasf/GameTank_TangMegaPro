@@ -17,6 +17,7 @@
 
 #include <verilated.h>
 #include "Vgametank.h"
+#include "vl_compat.h"
 #include "Vgametank___024root.h"
 
 struct Pixel {
